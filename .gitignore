@@ -1,0 +1,63 @@
+# ───────────── Python ─────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Distribución / build
+build/
+dist/
+*.egg-info/
+*.egg
+.eggs/
+
+# ───────────── Entornos virtuales ─────────────
+venv/
+.venv/
+env/
+ENV/
+
+# ───────────── Variables de entorno / secretos ─────────────
+.env
+.env.local
+.env.*.local
+*.secret
+secrets/
+
+# ───────────── Base de datos local (SQLite) ─────────────
+*.sqlite
+*.sqlite3
+*.db
+
+# ───────────── Testing / coverage ─────────────
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# ───────────── Type checkers ─────────────
+.mypy_cache/
+.ruff_cache/
+
+# ───────────── Jupyter ─────────────
+.ipynb_checkpoints/
+
+# ───────────── Editores / IDEs ─────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ───────────── Sistema operativo ─────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ───────────── Logs ─────────────
+*.log
+logs/
+
+# ───────────── Flet (build artifacts) ─────────────
+storage/
+.flet/

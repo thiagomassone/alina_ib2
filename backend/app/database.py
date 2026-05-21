@@ -1,5 +1,3 @@
-"""Conexión a la base de datos SQLite vía SQLAlchemy."""
-
 from sqlalchemy import create_engine
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 

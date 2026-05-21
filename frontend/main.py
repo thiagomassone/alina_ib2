@@ -26,7 +26,7 @@ API_BASE_URL = "http://localhost:8000"
 def main(page: ft.Page):
     page.title = "ALINA - IB2"
     page.theme_mode = ft.ThemeMode.LIGHT
-    page.theme = ft.Theme(color_scheme_seed=ft.Colors.INDIGO)
+    page.theme = ft.Theme(color_scheme_seed=ft.colors.INDIGO)
 
     # Cliente API compartido a través de la sesión
     page.api = ApiClient(API_BASE_URL)

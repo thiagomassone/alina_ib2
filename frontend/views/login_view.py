@@ -11,7 +11,7 @@ def login_view(page: ft.Page, on_success) -> ft.View:
 
     username = ft.TextField(label="Usuario", autofocus=True, width=320)
     password = ft.TextField(label="Contraseña", password=True, can_reveal_password=True, width=320)
-    error = ft.Text("", color=ft.Colors.RED_400)
+    error = ft.Text("", color=ft.colors.RED_400)
 
     def do_login(_):
         error.value = ""
@@ -35,7 +35,7 @@ def login_view(page: ft.Page, on_success) -> ft.View:
                 content=ft.Column(
                     [
                         ft.Text("ALINA - IB2", size=32, weight=ft.FontWeight.BOLD),
-                        ft.Text("Iniciar sesión", size=18, color=ft.Colors.GREY_700),
+                        ft.Text("Iniciar sesión", size=18, color=ft.colors.GREY_700),
                         ft.Container(height=20),
                         username,
                         password,
@@ -60,7 +60,7 @@ def register_view(page: ft.Page) -> ft.View:
     username = ft.TextField(label="Usuario", autofocus=True, width=320)
     email = ft.TextField(label="Email", width=320)
     password = ft.TextField(label="Contraseña", password=True, can_reveal_password=True, width=320)
-    error = ft.Text("", color=ft.Colors.RED_400)
+    error = ft.Text("", color=ft.colors.RED_400)
 
     def do_register(_):
         error.value = ""

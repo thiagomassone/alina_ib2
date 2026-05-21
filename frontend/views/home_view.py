@@ -25,7 +25,7 @@ def home_view(page: ft.Page) -> ft.View:
         width=320,
     )
     notif_sw = ft.Switch(label="Notificaciones", value=prefs["notifications_enabled"])
-    status = ft.Text("", color=ft.Colors.GREEN_600)
+    status = ft.Text("", color=ft.colors.GREEN_600)
 
     def save(_):
         try:
@@ -40,7 +40,7 @@ def home_view(page: ft.Page) -> ft.View:
             page.update()
         except Exception as e:
             status.value = f"Error: {e}"
-            status.color = ft.Colors.RED_400
+            status.color = ft.colors.RED_400
             page.update()
 
     def logout(_):
@@ -51,7 +51,7 @@ def home_view(page: ft.Page) -> ft.View:
         route="/",
         appbar=ft.AppBar(
             title=ft.Text("ALINA - IB2"),
-            actions=[ft.IconButton(icon=ft.Icons.LOGOUT, tooltip="Salir", on_click=logout)],
+            actions=[ft.IconButton(icon=ft.icons.LOGOUT, tooltip="Salir", on_click=logout)],
         ),
         controls=[
             ft.Container(

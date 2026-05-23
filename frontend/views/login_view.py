@@ -1,19 +1,19 @@
 """Vista de login y registro."""
-
+ 
 from __future__ import annotations
-
+ 
 import flet as ft
 import httpx
-
-
+ 
+ 
 def login_view(page: ft.Page, on_success) -> ft.View:
     """Construye la vista /login. ``on_success`` se llama tras autenticar OK."""
-
+ 
     username = ft.TextField(label="Usuario", autofocus=True, width=320)
     password = ft.TextField(label="Contraseña", password=True, can_reveal_password=True, width=320)
     error = ft.Text("", color=ft.colors.RED_400)
-
-    def do_login(_):
+ 
+    def do_login(_=None):
         error.value = ""
         try:
             page.api.login(username.value or "", password.value or "")
@@ -24,10 +24,14 @@ def login_view(page: ft.Page, on_success) -> ft.View:
         except Exception as e:
             error.value = f"Error de conexión: {e}"
             page.update()
-
+ 
+    # Enter en cualquiera de los dos campos dispara el login
+    username.on_submit = do_login
+    password.on_submit = do_login
+ 
     def go_register(_):
         page.go("/register")
-
+ 
     return ft.View(
         route="/login",
         controls=[
@@ -40,8 +44,8 @@ def login_view(page: ft.Page, on_success) -> ft.View:
                         username,
                         password,
                         error,
-                        ft.FilledButton("Entrar", on_click=do_login, width=320),
-                        ft.TextButton("Crear cuenta nueva", on_click=go_register),
+                        ft.FilledButton("Ingresar", on_click=do_login, width=320),
+                        ft.TextButton("Registrarse", on_click=go_register),
                     ],
                     horizontal_alignment=ft.CrossAxisAlignment.CENTER,
                     spacing=10,
@@ -54,15 +58,15 @@ def login_view(page: ft.Page, on_success) -> ft.View:
         vertical_alignment=ft.MainAxisAlignment.CENTER,
         horizontal_alignment=ft.CrossAxisAlignment.CENTER,
     )
-
-
+ 
+ 
 def register_view(page: ft.Page) -> ft.View:
     username = ft.TextField(label="Usuario", autofocus=True, width=320)
     email = ft.TextField(label="Email", width=320)
     password = ft.TextField(label="Contraseña", password=True, can_reveal_password=True, width=320)
     error = ft.Text("", color=ft.colors.RED_400)
-
-    def do_register(_):
+ 
+    def do_register(_=None):
         error.value = ""
         try:
             page.api.register(username.value or "", email.value or "", password.value or "")
@@ -74,7 +78,12 @@ def register_view(page: ft.Page) -> ft.View:
         except Exception as e:
             error.value = f"Error: {e}"
             page.update()
-
+ 
+    # Enter en cualquier campo dispara el registro
+    username.on_submit = do_register
+    email.on_submit = do_register
+    password.on_submit = do_register
+ 
     return ft.View(
         route="/register",
         controls=[

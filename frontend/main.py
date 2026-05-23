@@ -37,9 +37,9 @@ def main(page: ft.Page):
         # Ruta inicial / protegida
         if page.route in ("/", "/home"):
             if not page.api.is_authenticated:
-                page.views.append(login_view(page, on_success=lambda: page.go("/")))
-            else:
-                page.views.append(home_view(page))
+                page.go("/login")
+                return
+            page.views.append(home_view(page))
         elif page.route == "/register":
             page.views.append(register_view(page))
         else:  # /login y cualquier otra
@@ -53,7 +53,7 @@ def main(page: ft.Page):
 
     page.on_route_change = route_change
     page.on_view_pop = view_pop
-    page.go(page.route or "/login")
+    page.go("/login")
 
 
 if __name__ == "__main__":

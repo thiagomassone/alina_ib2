@@ -109,3 +109,15 @@ git push -u origin main
 ```
 
 Después, en **Settings → Collaborators** invitás a tus compañeros del equipo.
+
+
+Cambios:
+frontend/views/
+├── components.py       ← helpers compartidos (card, pill, dot, etc.)
+├── home_view.py        ← solo el shell con la NavigationBar (20 líneas)
+├── resumen_view.py     ← Tab 0
+├── en_vivo_view.py     ← Tab 1 (placeholder)
+├── historial_view.py   ← Tab 2
+├── analisis_view.py    ← Tab 3 (placeholder)
+├── alertas_view.py     ← Tab 4 (placeholder)
+└── perfil_view.py      ← Tab 5

@@ -121,3 +121,8 @@ frontend/views/
 ├── analisis_view.py    ← Tab 3 (placeholder)
 ├── alertas_view.py     ← Tab 4 (placeholder)
 └── perfil_view.py      ← Tab 5
+
+Score de cada sesión:
+score = 100 - (alertas_hápticas / minutos_sesión) * factor
+
+Score de Resumen = promedio de todas las sesiones del usuario

@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .config import settings
 from .database import Base, engine
-from .routers import auth, preferences
+from .routers import auth, preferences, sessions
 
 
 # Crea las tablas al arrancar (en producción usar Alembic para migraciones).
@@ -34,6 +34,7 @@ app.add_middleware(
 
 app.include_router(auth.router)
 app.include_router(preferences.router)
+app.include_router(sessions.router)
 
 
 @app.get("/health", tags=["health"])

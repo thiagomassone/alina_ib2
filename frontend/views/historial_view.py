@@ -1,19 +1,36 @@
 """Tab 2 — Historial: gráfico semanal + sesiones recientes."""
 
 from __future__ import annotations
+from datetime import datetime
 import flet as ft
 import theme as t
 from .components import card, card_label, divider, section_header
 
-_WEEKLY_DATA = [
-    ("Lun", 72), ("Mar", 68), ("Mié", 75), ("Jue", 80), ("Sáb", 78), ("Dom", 82),
-]
-
-_RECENT_SESSIONS = [
+# Mock de fallback — se usa cuando no hay sesiones en el backend
+_MOCK_WEEKLY  = [("Lun", 72), ("Mar", 68), ("Mié", 75), ("Jue", 80), ("Sáb", 78), ("Dom", 82)]
+_MOCK_SESSIONS = [
     {"fecha": "Hoy, 14:30",  "duracion": "45 min", "score": 83},
     {"fecha": "Hoy, 08:15",  "duracion": "60 min", "score": 76},
     {"fecha": "Ayer, 18:20", "duracion": "35 min", "score": 74},
 ]
+
+
+def _fmt_session(s: dict) -> dict:
+    """Convierte un SessionOut del backend al formato que usa la UI."""
+    try:
+        dt = datetime.fromisoformat(s["started_at"])
+        now = datetime.now()
+        if dt.date() == now.date():
+            fecha = f"Hoy, {dt.strftime('%H:%M')}"
+        elif (now.date() - dt.date()).days == 1:
+            fecha = f"Ayer, {dt.strftime('%H:%M')}"
+        else:
+            fecha = dt.strftime("%d/%m, %H:%M")
+        mins = int(s["duracion_min"])
+        duracion = f"{mins} min" if mins < 60 else f"{mins // 60}h {mins % 60:02d}m"
+        return {"fecha": fecha, "duracion": duracion, "score": int(s["score"])}
+    except Exception:
+        return {"fecha": "—", "duracion": "—", "score": 0}
 
 
 def _score_badge(score: int) -> ft.Control:
@@ -47,16 +64,16 @@ def _session_row(session: dict, last: bool = False) -> ft.Control:
     )
 
 
-def _mini_bar_chart(data: list[tuple[str, int]]) -> ft.Control:
+def _mini_bar_chart(data: list[tuple[str, int | float]]) -> ft.Control:
     max_val = max(v for _, v in data) if data else 100
     chart_height = 90
     bars = []
     for label, val in data:
-        bar_h = int((val / max_val) * chart_height)
+        bar_h = max(4, int((val / max_val) * chart_height))
         bars.append(
             ft.Column(
                 [
-                    ft.Text(str(val), size=9, color=t.TEXT_MUTED, text_align=ft.TextAlign.CENTER),
+                    ft.Text(str(int(val)), size=9, color=t.TEXT_MUTED, text_align=ft.TextAlign.CENTER),
                     ft.Container(
                         content=ft.Container(
                             bgcolor=t.TEAL,
@@ -77,8 +94,7 @@ def _mini_bar_chart(data: list[tuple[str, int]]) -> ft.Control:
 def _period_chip(label: str, selected: bool) -> ft.Container:
     return ft.Container(
         content=ft.Text(
-            label,
-            size=13,
+            label, size=13,
             weight=ft.FontWeight.W_600 if selected else ft.FontWeight.W_400,
             color=t.CARD if selected else t.TEXT_MUTED,
         ),
@@ -90,14 +106,49 @@ def _period_chip(label: str, selected: bool) -> ft.Container:
 
 
 def historial_view(page: ft.Page) -> ft.Control:
+    # ── Obtener datos del backend ─────────────────────────────────────────────
+    try:
+        raw_sessions = page.api.get_sessions(limit=20)
+        sessions_fmt = [_fmt_session(s) for s in raw_sessions]
+        recent = sessions_fmt[:3] if sessions_fmt else _MOCK_SESSIONS
+
+        # Calcular score promedio semanal por día de la semana
+        summary = page.api.get_score_summary()
+        score_semanal = int(summary["score_promedio"]) if summary["total_sesiones"] > 0 else 78
+        total_sesiones = summary["total_sesiones"]
+
+        # Gráfico: últimas 6 sesiones con su score (o mock si no hay)
+        if len(sessions_fmt) >= 2:
+            dias = ["Lu", "Ma", "Mi", "Ju", "Vi", "Sá", "Do"]
+            chart_data = [
+                (dias[i % 7], int(s["score"]))
+                for i, s in enumerate(reversed(sessions_fmt[-6:]))
+            ]
+        else:
+            chart_data = _MOCK_WEEKLY
+
+        usando_mock = total_sesiones == 0
+    except Exception:
+        recent, chart_data = _MOCK_SESSIONS, _MOCK_WEEKLY
+        score_semanal, total_sesiones, usando_mock = 78, 0, True
+
     return ft.Column(
         [
             section_header("Historial", "Seguimiento de tus sesiones"),
             ft.Container(height=10),
+
             card(
                 ft.Column(
                     [
-                        ft.Row([_period_chip("Semana", True), _period_chip("Mes", False), _period_chip("3 meses", False), _period_chip("Año", False)], spacing=8),
+                        ft.Row(
+                            [
+                                _period_chip("Semana", True),
+                                _period_chip("Mes", False),
+                                _period_chip("3 meses", False),
+                                _period_chip("Año", False),
+                            ],
+                            spacing=8,
+                        ),
                         ft.Container(height=10),
                         ft.Row(
                             [
@@ -105,7 +156,10 @@ def historial_view(page: ft.Page) -> ft.Control:
                                 ft.Row(
                                     [
                                         ft.Icon(ft.icons.CALENDAR_TODAY_OUTLINED, size=14, color=t.TEXT_MUTED),
-                                        ft.Text("6 – 12 mayo 2024", size=13, color=t.TEXT_DARK, weight=ft.FontWeight.W_500),
+                                        ft.Text(
+                                            datetime.now().strftime("Semana del %d/%m/%Y"),
+                                            size=13, color=t.TEXT_DARK, weight=ft.FontWeight.W_500,
+                                        ),
                                     ],
                                     spacing=6,
                                 ),
@@ -120,40 +174,50 @@ def historial_view(page: ft.Page) -> ft.Control:
                             [
                                 ft.Row(
                                     [
-                                        ft.Text("78", size=36, weight=ft.FontWeight.W_700, color=t.TEXT_DARK),
+                                        ft.Text(str(score_semanal), size=36, weight=ft.FontWeight.W_700, color=t.TEXT_DARK),
                                         ft.Container(content=ft.Text("/100", size=14, color=t.TEXT_MUTED), padding=ft.padding.only(bottom=6)),
                                     ],
                                     vertical_alignment=ft.CrossAxisAlignment.END, spacing=4,
                                 ),
                                 ft.Container(
-                                    content=ft.Row(
-                                        [
-                                            ft.Icon(ft.icons.ARROW_UPWARD, size=12, color=t.GOOD),
-                                            ft.Text("4% vs. semana anterior", size=11, color=t.GOOD, weight=ft.FontWeight.W_500),
-                                        ],
-                                        spacing=2,
+                                    content=ft.Text(
+                                        f"{total_sesiones} sesión{'es' if total_sesiones != 1 else ''}",
+                                        size=11, color=t.TEXT_MUTED, weight=ft.FontWeight.W_500,
                                     ),
-                                    bgcolor="#E6F9F8", border_radius=10,
+                                    bgcolor="#F3F5F8", border_radius=10,
                                     padding=ft.padding.symmetric(horizontal=8, vertical=4),
                                 ),
                             ],
                             spacing=12, vertical_alignment=ft.CrossAxisAlignment.CENTER,
                         ),
                         ft.Container(height=12),
-                        _mini_bar_chart(_WEEKLY_DATA),
+                        _mini_bar_chart(chart_data),
+                        ft.Container(height=4),
+                        # Nota si se están usando datos mock
+                        ft.Text(
+                            "* Datos de ejemplo — completá tu primera sesión",
+                            size=10, color=t.TEXT_LIGHT,
+                            visible=usando_mock,
+                        ),
                     ],
                     spacing=0,
                 )
             ),
+
             card(
                 ft.Column(
                     [card_label("Sesiones recientes"), ft.Container(height=8)]
-                    + [_session_row(s, last=(i == len(_RECENT_SESSIONS) - 1)) for i, s in enumerate(_RECENT_SESSIONS)],
+                    + [_session_row(s, last=(i == len(recent) - 1)) for i, s in enumerate(recent)],
                     spacing=0,
                 )
             ),
+
             ft.Container(
-                content=ft.Text("Ver todas las sesiones", size=13, color=t.TEAL, weight=ft.FontWeight.W_600, text_align=ft.TextAlign.CENTER),
+                content=ft.Text(
+                    "Ver todas las sesiones",
+                    size=13, color=t.TEAL, weight=ft.FontWeight.W_600,
+                    text_align=ft.TextAlign.CENTER,
+                ),
                 alignment=ft.alignment.center,
                 padding=ft.padding.symmetric(vertical=4),
             ),

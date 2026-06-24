@@ -32,6 +32,36 @@ class UserPreferences(Base):
     theme: Mapped[str] = mapped_column(String(16), default="light")  # light / dark
     language: Mapped[str] = mapped_column(String(8), default="es")
     notifications_enabled: Mapped[bool] = mapped_column(default=True)
+    device_name: Mapped[str] = mapped_column(String(64), default="ALINA Dispositivo")
     extra_json: Mapped[str] = mapped_column(Text, default="{}")
 
     user: Mapped[User] = relationship("User", back_populates="preferences")
+
+
+class Session(Base):
+    """Sesión de uso del dispositivo ALINA.
+
+    Cada vez que el usuario activa el monitoreo y lo detiene, se crea
+    una fila acá. El score se calcula en el endpoint y se almacena
+    ya listo para no recalcular en cada consulta.
+
+    score = max(0, 100 - (alertas_hapticas / duracion_min) * 10)
+    El factor 10 es ajustable empíricamente.
+    """
+
+    __tablename__ = "sessions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime)
+    duracion_min: Mapped[float] = mapped_column()          # duración real en minutos
+    alertas_hapticas: Mapped[int] = mapped_column(Integer) # veces que vibró para corregir
+    score: Mapped[float] = mapped_column()                 # 0–100, calculado al cerrar
+    min_buena: Mapped[float] = mapped_column(default=0.0)  # minutos en buena postura
+    min_mala: Mapped[float] = mapped_column(default=0.0)   # minutos en mala postura
+
+    user: Mapped["User"] = relationship("User", back_populates="sessions")
+
+
+# Agregar relación inversa en User
+User.sessions = relationship("Session", back_populates="user", cascade="all, delete-orphan")

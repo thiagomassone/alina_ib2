@@ -32,11 +32,33 @@ class UserPreferences(Base):
     theme: Mapped[str] = mapped_column(String(16), default="light")  # light / dark
     language: Mapped[str] = mapped_column(String(8), default="es")
     notifications_enabled: Mapped[bool] = mapped_column(default=True)
-    device_name: Mapped[str] = mapped_column(String(64), default="ALINA Dispositivo")
     extra_json: Mapped[str] = mapped_column(Text, default="{}")
 
     user: Mapped[User] = relationship("User", back_populates="preferences")
 
+
+
+class DeviceStatus(Base):
+    """Estado y configuración del dispositivo ALINA asociado al usuario.
+
+    Se actualiza:
+    - device_name / haptic_intensity: cuando el usuario aplica cambios desde la app
+    - last_calibration_at: cuando se completa una calibración
+    - battery_pct: con cada heartbeat del ESP32 (vía WebSocket/BLE)
+    """
+
+    __tablename__ = "device_status"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), unique=True)
+
+    device_name: Mapped[str] = mapped_column(String(64), default="ALINA Dispositivo")
+    haptic_intensity: Mapped[int] = mapped_column(Integer, default=60)   # 0–100
+    last_calibration_at: Mapped[str | None] = mapped_column(String(32), default=None, nullable=True)
+    battery_pct: Mapped[int | None] = mapped_column(Integer, default=None, nullable=True)
+    calibrated: Mapped[bool] = mapped_column(default=False)  # True después de calibrar, False al apagar/terminar sesión
+
+    user: Mapped["User"] = relationship("User", back_populates="device_status")
 
 class Session(Base):
     """Sesión de uso del dispositivo ALINA.
@@ -65,3 +87,4 @@ class Session(Base):
 
 # Agregar relación inversa en User
 User.sessions = relationship("Session", back_populates="user", cascade="all, delete-orphan")
+User.device_status = relationship("DeviceStatus", back_populates="user", uselist=False, cascade="all, delete-orphan")

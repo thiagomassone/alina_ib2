@@ -33,20 +33,38 @@ class TokenData(BaseModel):
 
 # ─── Preferencias ───
 class PreferencesUpdate(BaseModel):
-    device_name: str | None = None
     theme: str | None = None
     language: str | None = None
     notifications_enabled: bool | None = None
 
 
 class PreferencesOut(BaseModel):
-    device_name: str
     theme: str
     language: str
     notifications_enabled: bool
 
     model_config = ConfigDict(from_attributes=True)
 
+
+
+
+# ─── Dispositivo ───
+class DeviceStatusUpdate(BaseModel):
+    device_name: str | None = None
+    haptic_intensity: int | None = None
+    last_calibration_at: str | None = None
+    battery_pct: int | None = None
+    calibrated: bool | None = None
+
+
+class DeviceStatusOut(BaseModel):
+    device_name: str
+    haptic_intensity: int
+    last_calibration_at: str | None
+    battery_pct: int | None
+    calibrated: bool
+
+    model_config = ConfigDict(from_attributes=True)
 
 # ─── Sesiones ───
 class SessionCreate(BaseModel):

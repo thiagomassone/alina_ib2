@@ -63,7 +63,7 @@ def _build_device_sheet(page: ft.Page, device_name_text: ft.Text, card_name_text
         # Persistir en page y en el backend
         page.device_name = new_name  # type: ignore[attr-defined]
         try:
-            page.api.save_device_name(new_name)
+            page.api.update_device_status(device_name=new_name)
         except Exception:
             pass  # Si el backend no está disponible, queda en memoria
         page.update()
@@ -85,9 +85,12 @@ def _build_device_sheet(page: ft.Page, device_name_text: ft.Text, card_name_text
 
     def apply_intensity(_):
         # TODO: enviar por WebSocket/BLE → ESP32 guarda en SD
-        # payload = {"haptic_intensity": haptic_slider.value}
+        try:
+            page.api.update_device_status(haptic_intensity=int(haptic_slider.value))
+        except Exception:
+            pass
         page.snack_bar = ft.SnackBar(
-            ft.Text(f"Intensidad {int(haptic_slider.value)}% enviada al dispositivo", color=t.CARD),
+            ft.Text(f"Intensidad {int(haptic_slider.value)}% guardada", color=t.CARD),
             bgcolor=t.TEAL,
         )
         page.snack_bar.open = True
@@ -95,7 +98,13 @@ def _build_device_sheet(page: ft.Page, device_name_text: ft.Text, card_name_text
 
     def calibrate(_):
         # TODO: enviar comando de calibración por WebSocket/BLE
-        page.snack_bar = ft.SnackBar(ft.Text("Iniciando calibración…", color=t.CARD), bgcolor=t.TEAL)
+        from datetime import datetime
+        ts = datetime.now().isoformat(timespec="seconds")
+        try:
+            page.api.update_device_status(last_calibration_at=ts, calibrated=True)
+        except Exception:
+            pass
+        page.snack_bar = ft.SnackBar(ft.Text("Calibración iniciada y registrada", color=t.CARD), bgcolor=t.TEAL)
         page.snack_bar.open = True
         page.update()
 
@@ -201,7 +210,43 @@ def _build_device_sheet(page: ft.Page, device_name_text: ft.Text, card_name_text
 
 # ─── Tarjetas del Resumen ─────────────────────────────────────────────────────
 
-def _device_card(on_tap, name_text: ft.Text) -> ft.Control:
+def _device_card(on_tap, name_text: ft.Text, battery_pct: int | None, calibrated: bool, connected: bool) -> ft.Control:
+    """Tarjeta del dispositivo con 3 estados:
+    - Listo (verde): conectado y calibrado
+    - Pendiente de calibrar (amarillo): conectado sin calibrar
+    - Desconectado (rojo): sin señal
+    """
+    if not connected:
+        status_color  = t.BAD
+        status_label  = "Desconectado"
+        status_dot_c  = t.BAD
+    elif not calibrated:
+        status_color  = t.NEUTRAL
+        status_label  = "Pendiente de calibrar"
+        status_dot_c  = t.NEUTRAL
+    else:
+        status_color  = t.GOOD
+        status_label  = "Listo"
+        status_dot_c  = t.GOOD
+
+    # Batería
+    if battery_pct is None:
+        bat_icon  = ft.icons.BATTERY_UNKNOWN
+        bat_color = t.TEXT_LIGHT
+        bat_str   = "—"
+    elif battery_pct > 60:
+        bat_icon  = ft.icons.BATTERY_FULL
+        bat_color = t.GOOD
+        bat_str   = f"{battery_pct}%"
+    elif battery_pct > 20:
+        bat_icon  = ft.icons.BATTERY_4_BAR
+        bat_color = t.NEUTRAL
+        bat_str   = f"{battery_pct}%"
+    else:
+        bat_icon  = ft.icons.BATTERY_1_BAR
+        bat_color = t.BAD
+        bat_str   = f"{battery_pct}%"
+
     return ft.GestureDetector(
         on_tap=on_tap,
         content=card(
@@ -215,7 +260,7 @@ def _device_card(on_tap, name_text: ft.Text) -> ft.Control:
                     ft.Column(
                         [
                             name_text,
-                            ft.Row([dot(t.GOOD, 8), ft.Text("Conectado", size=12, color=t.TEXT_MUTED)], spacing=6),
+                            ft.Row([dot(status_dot_c, 8), ft.Text(status_label, size=12, color=status_color, weight=ft.FontWeight.W_500)], spacing=6),
                         ],
                         spacing=4, expand=True,
                     ),
@@ -223,8 +268,8 @@ def _device_card(on_tap, name_text: ft.Text) -> ft.Control:
                         [
                             ft.Row(
                                 [
-                                    ft.Icon(ft.icons.BATTERY_FULL, color=t.GOOD, size=18),
-                                    ft.Text("92%", size=14, weight=ft.FontWeight.W_700, color=t.TEXT_DARK),
+                                    ft.Icon(bat_icon, color=bat_color, size=18),
+                                    ft.Text(bat_str, size=14, weight=ft.FontWeight.W_700, color=t.TEXT_DARK),
                                 ],
                                 spacing=4, alignment=ft.MainAxisAlignment.END,
                             ),
@@ -375,34 +420,6 @@ def _daily_summary_card(min_buena: float, min_mala: float) -> ft.Control:
     )
 
 
-def _calibration_card() -> ft.Control:
-    return card(
-        ft.Row(
-            [
-                ft.Column(
-                    [
-                        card_label("Última calibración"),
-                        ft.Text("Hoy, 08:15", size=14, weight=ft.FontWeight.W_600, color=t.TEXT_DARK),
-                        ft.Row(
-                            [
-                                ft.Icon(ft.icons.REFRESH, size=12, color=t.TEAL),
-                                ft.Text("Calibración conectada", size=11, color=t.TEAL),
-                            ],
-                            spacing=4,
-                        ),
-                    ],
-                    spacing=2, expand=True,
-                ),
-                ft.Container(
-                    content=ft.Icon(ft.icons.CHECK, color=t.CARD, size=16),
-                    bgcolor=t.GOOD, border_radius=14,
-                    width=28, height=28, alignment=ft.alignment.center,
-                ),
-            ],
-            vertical_alignment=ft.CrossAxisAlignment.CENTER,
-        ),
-        padding=14,
-    )
 
 
 # ─── Entry point ─────────────────────────────────────────────────────────────
@@ -429,12 +446,16 @@ def resumen_view(page: ft.Page) -> ft.Control:
         tiempo_str, alertas_hoy, min_buena, min_mala = "—", 0, 0.0, 0.0
 
     username = getattr(page, "username", None) or "Alex"
-    # Cargar nombre del dispositivo desde el backend
+    # Cargar estado del dispositivo desde el backend
     try:
-        prefs = page.api.get_preferences()
-        initial_name = prefs.get("device_name", "ALINA Dispositivo")
+        ds = page.api.get_device_status()
+        initial_name    = ds.get("device_name", "ALINA Dispositivo")
+        battery_pct     = ds.get("battery_pct")
+        haptic_init     = ds.get("haptic_intensity", 60)
+        calibrated      = ds.get("calibrated", False)
+        connected       = True   # TODO: reemplazar con estado real del WebSocket/BLE
     except Exception:
-        initial_name = getattr(page, "device_name", "ALINA Dispositivo")
+        initial_name, battery_pct, haptic_init, calibrated, connected = "ALINA Dispositivo", None, 60, False, False
 
     # Instancias compartidas entre tarjeta y sheet para sincronizar el nombre
     card_name_text = ft.Text(initial_name, size=14, weight=ft.FontWeight.W_600, color=t.TEXT_DARK)
@@ -451,7 +472,7 @@ def resumen_view(page: ft.Page) -> ft.Control:
         [
             section_header(f"Hola, {username}", "Resumen de hoy"),
             ft.Container(height=10),
-            _device_card(on_tap=open_device_sheet, name_text=card_name_text),
+            _device_card(on_tap=open_device_sheet, name_text=card_name_text, battery_pct=battery_pct, calibrated=calibrated, connected=connected),
             _score_card(score=score),
             ft.Row(
                 [
@@ -461,7 +482,6 @@ def resumen_view(page: ft.Page) -> ft.Control:
                 spacing=12,
             ),
             _daily_summary_card(min_buena=min_buena, min_mala=min_mala),
-            _calibration_card(),
             ft.Container(height=12),
         ],
         spacing=12,

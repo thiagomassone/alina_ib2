@@ -55,9 +55,36 @@ class ApiClient:
         r.raise_for_status()
         return r.json()
 
+    # ─── Dispositivo ───
+    def get_device_status(self) -> dict:
+        """Estado actual del dispositivo (nombre, batería, calibración, intensidad)."""
+        r = httpx.get(f"{self.base_url}/device", headers=self._auth_headers(), timeout=10)
+        r.raise_for_status()
+        return r.json()
+
+    def update_device_status(self, **fields) -> dict:
+        """Actualizar campos del dispositivo (device_name, haptic_intensity, last_calibration_at, battery_pct)."""
+        r = httpx.patch(
+            f"{self.base_url}/device",
+            json={k: v for k, v in fields.items() if v is not None},
+            headers=self._auth_headers(),
+            timeout=10,
+        )
+        r.raise_for_status()
+        return r.json()
+
     def save_device_name(self, name: str) -> dict:
-        """Guardar el nombre del dispositivo en la cuenta del usuario."""
-        return self.update_preferences(device_name=name)
+        return self.update_device_status(device_name=name)
+
+    def save_calibration_timestamp(self, iso_timestamp: str) -> dict:
+        return self.update_device_status(last_calibration_at=iso_timestamp)
+
+    def save_haptic_intensity(self, intensity: int) -> dict:
+        return self.update_device_status(haptic_intensity=intensity)
+
+    def update_battery(self, pct: int) -> dict:
+        """Llamado cuando el ESP32 manda el nivel de batería."""
+        return self.update_device_status(battery_pct=pct)
 
     def update_preferences(self, **fields) -> dict:
         r = httpx.patch(

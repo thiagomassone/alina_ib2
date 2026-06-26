@@ -185,6 +185,8 @@ def en_vivo_view(page: ft.Page) -> ft.Control:
         if ws.connected:
             conn_status.value = "Conectado"
             conn_status.color = t.GOOD
+        if getattr(ws, "last_status", None):
+            _on_status(ws.last_status)
 
     # ── Handlers de botones ───────────────────────────────────────────────────
 

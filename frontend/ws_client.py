@@ -31,6 +31,7 @@ class ALINAWebSocket:
         self._ws: websocket.WebSocketApp | None = None
         self._thread: threading.Thread | None = None
         self.connected = False
+        self.last_status: dict | None = None
 
         # Callbacks — asignar desde la UI
         self.on_status:         callable = None
@@ -127,6 +128,8 @@ class ALINAWebSocket:
             return
 
         msg_type = data.get("type")
+        if msg_type == "status":
+            self.last_status = data
         dispatch = {
             "status":         self.on_status,
             "posture":        self.on_posture,

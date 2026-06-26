@@ -374,7 +374,9 @@ void dispararVibracion(bool grupoT12, bool grupoT1) {
   if (grupoT12) { gpio_set_level((gpio_num_t)M1_PIN, 1); gpio_set_level((gpio_num_t)M2_PIN, 1); }
   if (grupoT1)  { gpio_set_level((gpio_num_t)M3_PIN, 1); gpio_set_level((gpio_num_t)M4_PIN, 1); }
   vibrando = true;
-  tFinVibra = millis() + VIBRA_MS;
+  // Usar duración configurada por el usuario (cfgHapticIntensity), con VIBRA_MS como fallback
+  unsigned long dur = (cfgHapticIntensity > 0) ? (unsigned long)cfgHapticIntensity : VIBRA_MS;
+  tFinVibra = millis() + dur;
   alertasHapticas++;
 }
 

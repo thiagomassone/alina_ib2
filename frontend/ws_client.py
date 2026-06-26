@@ -61,7 +61,12 @@ class ALINAWebSocket:
         )
         self._thread = threading.Thread(
             target=self._ws.run_forever,
-            kwargs={"reconnect": 5},   # reintentar cada 5s si se desconecta
+            #kwargs={"reconnect": 5},   # reintentar cada 5s si se desconecta
+            kwargs={
+                "reconnect": 5,
+                "ping_interval": 5,   # mandar ping cada 5s
+                "ping_timeout": 3,    # si no responde en 3s, cerrar
+            },
             daemon=True,
         )
         self._thread.start()
@@ -114,12 +119,18 @@ class ALINAWebSocket:
             self.on_connect()
 
     def _on_close(self, ws, code, msg):
+        print(f"[WS CLOSE] code={code} msg={msg}")   # ← temporal
         self.connected = False
         if self.on_disconnect:
             self.on_disconnect()
 
     def _on_error(self, ws, error):
-        print(f"[WS] Error: {error}")
+        print(f"[WS] Error: {error}") # temporal
+        # Si la conexión se cayó (ej. ping/pong timeout), notificar desconexión
+        if self.connected:
+            self.connected = False
+            if self.on_disconnect:
+                self.on_disconnect()
 
     def _on_message(self, ws, message):
         try:

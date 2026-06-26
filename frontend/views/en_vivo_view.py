@@ -132,6 +132,13 @@ def en_vivo_view(page: ft.Page) -> ft.Control:
         imu_states["dorsal_superior"] = "listo" if data.get("imu_t12") else "desconectado"
         imu_states["dorsal_medio"]    = "listo" if data.get("imu_t1")  else "desconectado"
         imu_states["pelvis"]          = "listo" if data.get("imu_rpsis") else "desconectado"
+        
+        # Sincronizar estado de calibración con el backend
+        try:
+            page.api.update_device_status(calibrated=bool(data.get("calibrated")))
+        except Exception:
+            pass
+        
         # Si no está calibrado, cambiar a "calibrar"
         if not data.get("calibrated"):
             for k in imu_states:

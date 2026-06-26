@@ -325,10 +325,19 @@ void procesarComando(const String &msg) {
     Serial.println("Calibración ejecutada desde la app.");
 
   } else if (strcmp(cmd, "set_config") == 0) {
-    if (doc.containsKey("device_name"))      cfgDeviceName      = doc["device_name"].as<String>();
-    if (doc.containsKey("haptic_intensity")) cfgHapticIntensity = doc["haptic_intensity"];
+    if (doc.containsKey("device_name"))       cfgDeviceName       = doc["device_name"].as<String>();
+    if (doc.containsKey("haptic_duration_ms")) cfgHapticIntensity = doc["haptic_duration_ms"];
     guardarConfig();
     Serial.println("Config actualizada desde la app.");
+
+  } else if (strcmp(cmd, "test_vibration") == 0) {
+    // Probar vibración con la duración actual guardada en config
+    // El valor llega como haptic_duration_ms desde la app
+    unsigned long durMs = doc["haptic_duration_ms"] | (unsigned long)VIBRA_MS;
+    dispararVibracion(true, true);   // todos los motores
+    // Sobreescribir el timer para usar la duración del test
+    tFinVibra = millis() + durMs;
+    Serial.printf("Test vibración: %lu ms\n", durMs);
 
   } else if (strcmp(cmd, "wifi_reset") == 0) {
     Serial.println("Reset WiFi desde la app. Reiniciando en modo Captive Portal...");

@@ -34,6 +34,7 @@
 #include <WiFiManager.h>
 #include <WebSocketsServer.h>
 #include <ArduinoJson.h>
+#include <ESPmDNS.h>
 #include "driver/gpio.h"
 
 // ─── Pines ───────────────────────────────────────────────────────────────────
@@ -474,6 +475,13 @@ void setup() {
   }
   Serial.print("WiFi OK. IP: ");
   Serial.println(WiFi.localIP());
+
+  // mDNS — accesible como alina.local en la red
+  if (MDNS.begin("alina")) {
+    Serial.println("mDNS OK. Dispositivo accesible como alina.local");
+  } else {
+    Serial.println("WARN: mDNS no pudo iniciarse.");
+  }
 
   // WebSocket
   webSocket.begin();

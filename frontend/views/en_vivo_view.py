@@ -68,7 +68,7 @@ def en_vivo_view(page: ft.Page) -> ft.Control:
     back_img    = ft.Ref[ft.Image]()
     timer_text  = ft.Text("00:00", size=32, weight=ft.FontWeight.W_700, color=t.TEXT_DARK)
     status_text = ft.Text("Sin sesión activa", size=13, color=t.TEXT_MUTED)
-
+    conn_status = ft.Text("Desconectado", size=13, color=t.TEXT_MUTED)
 
     start_btn = ft.FilledButton(
         "Iniciar sesión", icon=ft.icons.PLAY_ARROW,

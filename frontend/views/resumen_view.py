@@ -74,8 +74,8 @@ def _build_device_sheet(page: ft.Page, device_name_text: ft.Text, card_name_text
 
     # ── Estado de conexión ───────────────────────────────────────────────────
     ws = getattr(page, "ws_client", None)
-    is_connected = True  # TEST para validar opciones con conexion
-    #is_connected = ws is not None and ws.connected
+    #is_connected = True  # TEST para validar opciones con conexion
+    is_connected = ws is not None and ws.connected
 
     # ── IP del dispositivo ────────────────────────────────────────────────────
     ip_field = ft.TextField(

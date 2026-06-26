@@ -580,67 +580,206 @@ def _daily_summary_card(min_buena: float, min_mala: float) -> ft.Control:
 # ─── Entry point ─────────────────────────────────────────────────────────────
 
 def resumen_view(page: ft.Page) -> ft.Control:
-    # Score global (promedio de todas las sesiones)
-    try:
-        summary = page.api.get_score_summary()
-        score = int(summary["score_promedio"]) if summary["total_sesiones"] > 0 else None
-    except Exception:
-        score = None
 
-    # Tiempo activo y alertas de HOY
-    try:
-        today = page.api.get_today_summary()
-        total_min = today["total_min_uso"]
-        horas = int(total_min // 60)
-        mins = int(total_min % 60)
-        tiempo_str = f"{horas}h {mins:02d}m" if horas > 0 else (f"{mins}m" if mins > 0 else "0m")
-        alertas_hoy = today.get("total_alertas", 0)
-        min_buena = today.get("total_min_buena", 0.0)
-        min_mala  = today.get("total_min_mala", 0.0)
-    except Exception:
-        tiempo_str, alertas_hoy, min_buena, min_mala = "—", 0, 0.0, 0.0
+    # ── Cargar datos iniciales ────────────────────────────────────────────────
+    def _load_device():
+        try:
+            ds = page.api.get_device_status()
+            ws = getattr(page, "ws_client", None)
+            return {
+                "name":      ds.get("device_name", "ALINA Dispositivo"),
+                "battery":   ds.get("battery_pct"),
+                "haptic":    ds.get("haptic_intensity", 60),
+                "calibrated":ds.get("calibrated", False),
+                "connected": ws is not None and ws.connected,
+            }
+        except Exception:
+            return {"name": "ALINA Dispositivo", "battery": None, "haptic": 60, "calibrated": False, "connected": False}
 
-    username = getattr(page, "username", None) or "Alex"
-    # Cargar estado del dispositivo desde el backend
-    try:
-        ds = page.api.get_device_status()
-        initial_name    = ds.get("device_name", "ALINA Dispositivo")
-        battery_pct     = ds.get("battery_pct")
-        haptic_init     = ds.get("haptic_intensity", 60)
-        calibrated      = ds.get("calibrated", False)
-        ws = getattr(page, "ws_client", None)
-        connected = ws is not None and ws.connected
-    except Exception:
-        initial_name, battery_pct, haptic_init, calibrated, connected = "ALINA Dispositivo", None, 60, False, False
+    def _load_score():
+        try:
+            summary = page.api.get_score_summary()
+            return int(summary["score_promedio"]) if summary["total_sesiones"] > 0 else None
+        except Exception:
+            return None
 
-    # Instancias compartidas entre tarjeta y sheet para sincronizar el nombre
-    card_name_text = ft.Text(initial_name, size=14, weight=ft.FontWeight.W_600, color=t.TEXT_DARK)
-    sheet_name_text = ft.Text(initial_name, size=16, weight=ft.FontWeight.W_700, color=t.TEXT_DARK)
+    def _load_today():
+        try:
+            today = page.api.get_today_summary()
+            total_min = today["total_min_uso"]
+            horas = int(total_min // 60)
+            mins  = int(total_min % 60)
+            tiempo_str = f"{horas}h {mins:02d}m" if horas > 0 else (f"{mins}m" if mins > 0 else "0m")
+            return {
+                "tiempo":    tiempo_str,
+                "alertas":   today.get("total_alertas", 0),
+                "min_buena": today.get("total_min_buena", 0.0),
+                "min_mala":  today.get("total_min_mala", 0.0),
+            }
+        except Exception:
+            return {"tiempo": "—", "alertas": 0, "min_buena": 0.0, "min_mala": 0.0}
 
-    device_sheet = _build_device_sheet(page, sheet_name_text, card_name_text, haptic_init=haptic_init, battery_pct=battery_pct)
+    dev   = _load_device()
+    score = _load_score()
+    today = _load_today()
+    username = getattr(page, "username", None)
+    if not username:
+        try:
+            me = page.api.get_me()
+            username = me.get("nombre") or me.get("email", "").split("@")[0]
+        except Exception:
+            username = "vos"
+
+    # ── Refs para actualizar sin reconstruir ──────────────────────────────────
+    device_card_ref  = ft.Ref[ft.Container]()
+    score_card_ref   = ft.Ref[ft.Container]()
+    tiempo_ref       = ft.Ref[ft.Text]()
+    alertas_ref      = ft.Ref[ft.Text]()
+    min_buena_ref    = ft.Ref[ft.Text]()
+    min_mala_ref     = ft.Ref[ft.Text]()
+
+    # ── Nombre compartido entre card y sheet ─────────────────────────────────
+    card_name_text  = ft.Text(dev["name"], size=14, weight=ft.FontWeight.W_600, color=t.TEXT_DARK)
+    sheet_name_text = ft.Text(dev["name"], size=16, weight=ft.FontWeight.W_700, color=t.TEXT_DARK)
+
+    device_sheet = _build_device_sheet(page, sheet_name_text, card_name_text,
+                                       haptic_init=dev["haptic"], battery_pct=dev["battery"])
     page.overlay.append(device_sheet)
 
     def open_device_sheet(_):
         device_sheet.open = True
         page.update()
 
-    return ft.Column(
+    # ── Refresh — llamado por el timer en home_view ───────────────────────────
+    def refresh():
+        new_dev   = _load_device()
+        new_score = _load_score()
+        new_today = _load_today()
+
+        # Actualizar card del dispositivo
+        device_card_ref.current.content = _device_card(
+            on_tap=open_device_sheet,
+            name_text=ft.Text(new_dev["name"], size=14, weight=ft.FontWeight.W_600, color=t.TEXT_DARK),
+            battery_pct=new_dev["battery"],
+            calibrated=new_dev["calibrated"],
+            connected=new_dev["connected"],
+        ).content
+
+        # Actualizar score
+        score_card_ref.current.content = _score_card(score=new_score).content
+
+        # Actualizar métricas
+        tiempo_ref.current.value    = new_today["tiempo"]
+        alertas_ref.current.value   = str(new_today["alertas"])
+        min_buena_ref.current.value = _fmt_min(new_today["min_buena"])
+        min_mala_ref.current.value  = _fmt_min(new_today["min_mala"])
+
+    def on_device_change(connected: bool, calibrated: bool = False):
+        """Llamado desde ws_client.on_connect / on_disconnect — actualiza solo la card del dispositivo."""
+        try:
+            ds = page.api.get_device_status()
+            name     = ds.get("device_name", "ALINA Dispositivo")
+            battery  = ds.get("battery_pct")
+            cal      = calibrated or ds.get("calibrated", False)
+        except Exception:
+            name, battery, cal = "ALINA Dispositivo", None, calibrated
+        device_card_ref.current.content = _device_card(
+            on_tap=open_device_sheet,
+            name_text=ft.Text(name, size=14, weight=ft.FontWeight.W_600, color=t.TEXT_DARK),
+            battery_pct=battery,
+            calibrated=cal,
+            connected=connected,
+        ).content
+        try:
+            page.update()
+        except Exception:
+            pass
+
+    def on_session_saved():
+        """Llamado desde en_vivo_view cuando se guarda una sesión — actualiza score y métricas."""
+        new_score = _load_score()
+        new_today = _load_today()
+        score_card_ref.current.content = _score_card(score=new_score).content
+        tiempo_ref.current.value    = new_today["tiempo"]
+        alertas_ref.current.value   = str(new_today["alertas"])
+        min_buena_ref.current.value = _fmt_min(new_today["min_buena"])
+        min_mala_ref.current.value  = _fmt_min(new_today["min_mala"])
+        try:
+            page.update()
+        except Exception:
+            pass
+
+    # ── Construir UI ──────────────────────────────────────────────────────────
+    col = ft.Column(
         [
             section_header(f"Hola, {username}", "Resumen de hoy"),
             ft.Container(height=10),
-            _device_card(on_tap=open_device_sheet, name_text=card_name_text, battery_pct=battery_pct, calibrated=calibrated, connected=connected),
-            _score_card(score=score),
+            ft.Container(
+                ref=device_card_ref,
+                content=_device_card(
+                    on_tap=open_device_sheet,
+                    name_text=card_name_text,
+                    battery_pct=dev["battery"],
+                    calibrated=dev["calibrated"],
+                    connected=dev["connected"],
+                ),
+            ),
+            ft.Container(
+                ref=score_card_ref,
+                content=_score_card(score=score),
+            ),
             ft.Row(
                 [
-                    ft.Container(content=_metric_card("Tiempo hoy", tiempo_str, "activos"), expand=True),
-                    ft.Container(content=_metric_card("Alertas", str(alertas_hoy), "hoy"), expand=True),
+                    ft.Container(
+                        expand=True,
+                        content=card(ft.Column([
+                            card_label("Tiempo hoy"),
+                            ft.Container(height=2),
+                            ft.Text(ref=tiempo_ref, value=today["tiempo"], size=24, weight=ft.FontWeight.W_700, color=t.TEXT_DARK),
+                            ft.Text("activos", size=11, color=t.TEXT_LIGHT),
+                        ], spacing=2), padding=14),
+                    ),
+                    ft.Container(
+                        expand=True,
+                        content=card(ft.Column([
+                            card_label("Alertas"),
+                            ft.Container(height=2),
+                            ft.Text(ref=alertas_ref, value=str(today["alertas"]), size=24, weight=ft.FontWeight.W_700, color=t.TEXT_DARK),
+                            ft.Text("hoy", size=11, color=t.TEXT_LIGHT),
+                        ], spacing=2), padding=14),
+                    ),
                 ],
                 spacing=12,
             ),
-            _daily_summary_card(min_buena=min_buena, min_mala=min_mala),
+            card(
+                ft.Column([
+                    card_label("Resumen diario"),
+                    ft.Container(height=6),
+                    ft.Row(
+                        [
+                            ft.Row([dot(t.GOOD), ft.Text("Buena postura", size=13, color=t.TEXT_DARK)], spacing=8),
+                            ft.Text(ref=min_buena_ref, value=_fmt_min(today["min_buena"]), size=13, color=t.TEXT_MUTED, weight=ft.FontWeight.W_500),
+                        ],
+                        alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                    ),
+                    ft.Row(
+                        [
+                            ft.Row([dot(t.BAD), ft.Text("Mala postura", size=13, color=t.TEXT_DARK)], spacing=8),
+                            ft.Text(ref=min_mala_ref, value=_fmt_min(today["min_mala"]), size=13, color=t.TEXT_MUTED, weight=ft.FontWeight.W_500),
+                        ],
+                        alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                    ),
+                ], spacing=10)
+            ),
             ft.Container(height=12),
         ],
         spacing=12,
         scroll=ft.ScrollMode.AUTO,
         expand=True,
     )
+
+    # Adjuntar el método refresh al Column para que home_view pueda llamarlo
+    col.refresh          = refresh
+    col.on_device_change = on_device_change
+    col.on_session_saved = on_session_saved
+    return col

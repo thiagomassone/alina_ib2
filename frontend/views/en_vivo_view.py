@@ -65,7 +65,7 @@ def en_vivo_view(page: ft.Page) -> ft.Control:
     }
 
     # ── Controles reactivos ───────────────────────────────────────────────────
-    back_img    = ft.Ref[ft.Image]()
+    back_img_ref = ft.Ref[ft.Image]()
     timer_text  = ft.Text("00:00", size=32, weight=ft.FontWeight.W_700, color=t.TEXT_DARK)
     status_text = ft.Text("Sin sesión activa", size=13, color=t.TEXT_MUTED)
     conn_status = ft.Text("Desconectado", size=13, color=t.TEXT_MUTED)
@@ -128,22 +128,25 @@ def en_vivo_view(page: ft.Page) -> ft.Control:
         except: pass
 
     def _on_status(data: dict):
-        # Actualizar estados de IMUs según respuesta del ESP
         imu_states["dorsal_superior"] = "listo" if data.get("imu_t12") else "desconectado"
         imu_states["dorsal_medio"]    = "listo" if data.get("imu_t1")  else "desconectado"
         imu_states["pelvis"]          = "listo" if data.get("imu_rpsis") else "desconectado"
-        
-        # Sincronizar estado de calibración con el backend
+
         try:
             page.api.update_device_status(calibrated=bool(data.get("calibrated")))
         except Exception:
             pass
-        
-        # Si no está calibrado, cambiar a "calibrar"
+
         if not data.get("calibrated"):
             for k in imu_states:
                 if imu_states[k] == "listo":
                     imu_states[k] = "calibrar"
+
+        # Actualizar SVG del IMU
+        if back_img_ref.current:
+            new_img = _back_svg_widget(imu_states)
+            back_img_ref.current.src_base64 = new_img.src_base64
+
         try: page.update()
         except: pass
 
@@ -161,6 +164,7 @@ def en_vivo_view(page: ft.Page) -> ft.Control:
             )
             page.snack_bar = ft.SnackBar(
                 ft.Text("Sesión guardada correctamente", color=t.CARD), bgcolor=t.TEAL)
+            on_session_saved()  # notificar al resumen
         except Exception as e:
             page.snack_bar = ft.SnackBar(
                 ft.Text(f"Error guardando sesión: {e}", color=t.CARD), bgcolor=t.BAD)
@@ -273,7 +277,31 @@ def en_vivo_view(page: ft.Page) -> ft.Control:
     pause_btn.on_click  = toggle_pause
     stop_btn.on_click   = stop_session
 
-    return ft.Column(
+    def refresh():
+        """Llamado por el timer global — re-registra callbacks del WS si cambió."""
+        ws = getattr(page, "ws_client", None)
+        if ws:
+            ws.on_connect        = _on_ws_connect
+            ws.on_disconnect     = _on_ws_disconnect
+            ws.on_status         = _on_status
+            ws.on_session_end    = _on_session_end
+            ws.on_session_status = _on_session_status
+            # Actualizar estado de conexión
+            if ws.connected:
+                conn_status.value = "Conectado"
+                conn_status.color = t.GOOD
+            else:
+                conn_status.value = "Desconectado"
+                conn_status.color = t.BAD
+            # Si hay último status, refrescar IMUs
+            if getattr(ws, "last_status", None):
+                _on_status(ws.last_status)
+
+    # home_view sobreescribe esto con referencia al resumen
+    def on_session_saved():
+        pass
+
+    col = ft.Column(
         [
             section_header("En vivo", "Estado del dispositivo"),
             ft.Container(height=10),
@@ -288,6 +316,7 @@ def en_vivo_view(page: ft.Page) -> ft.Control:
                             [
                                 ft.Container(
                                     content=_back_svg_widget(imu_states),
+                                    ref=back_img_ref,
                                     expand=True,
                                     alignment=ft.alignment.center,
                                 ),
@@ -343,3 +372,6 @@ def en_vivo_view(page: ft.Page) -> ft.Control:
         scroll=ft.ScrollMode.AUTO,
         expand=True,
     )
+    col.refresh          = refresh
+    col.on_session_saved = on_session_saved
+    return col

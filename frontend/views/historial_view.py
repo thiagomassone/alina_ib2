@@ -390,7 +390,7 @@ def historial_view(page: ft.Page) -> ft.Control:
         usando_mock = True
 
     sessions_fmt = [_fmt_session(s) for s in sessions_raw]
-    recent = sessions_fmt[:5] if sessions_fmt else _MOCK_SESSIONS
+    recent = sessions_fmt[:5] if sessions_fmt else []
 
     # ── Estado reactivo ───────────────────────────────────────────────────────
     state = {"period": "semana", "offset": 0}
@@ -491,7 +491,7 @@ def historial_view(page: ft.Page) -> ft.Control:
         page_ref_list[0] = page
         session_rows.append(row_widget)
 
-    return ft.Column(
+    col = ft.Column(
         [
             section_header("Historial", "Seguimiento de tus sesiones"),
             ft.Container(height=10),
@@ -612,3 +612,32 @@ def historial_view(page: ft.Page) -> ft.Control:
         scroll=ft.ScrollMode.AUTO,
         expand=True,
     )
+
+    def refresh():
+        """Recargar sesiones y reconstruir gráfico y lista reciente."""
+        nonlocal sessions_raw, sessions_fmt, recent
+        try:
+            sessions_raw = page.api.get_sessions(limit=200)
+        except Exception:
+            return
+        sessions_fmt = [_fmt_session(s) for s in sessions_raw]
+        recent = sessions_fmt[:5] if sessions_fmt else []
+        # Reconstruir con el período/offset actuales
+        _rebuild_chart()
+        # Reconstruir sesiones recientes
+        new_rows = []
+        for i, s in enumerate(recent):
+            row_widget, page_ref_list = _session_row(s, last=(i == len(recent) - 1))
+            page_ref_list[0] = page
+            new_rows.append(row_widget)
+        # Encontrar la card de sesiones recientes (último card antes del Container final)
+        # y reemplazar su contenido
+        recent_card = col.controls[-2]
+        recent_card.content.controls = [card_label("Sesiones recientes"), ft.Container(height=8)] + new_rows
+        try:
+            page.update()
+        except Exception:
+            pass
+
+    col.refresh = refresh
+    return col

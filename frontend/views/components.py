@@ -8,27 +8,34 @@ import theme as t
 # ── Logo ─────────────────────────────────────────────────────────────────────
 
 def alina_logo_mark(size: int = 32) -> ft.Control:
-    dot_sizes = [size * 0.28, size * 0.22, size * 0.19, size * 0.16]
-    dots = ft.Column(
-        [ft.Container(width=s, height=s, bgcolor=t.TEAL, border_radius=s) for s in dot_sizes],
-        spacing=max(1, int(size * 0.06)),
-        horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-        alignment=ft.MainAxisAlignment.CENTER,
-    )
-    return ft.Stack(
-        [
-            ft.Icon(ft.icons.CHANGE_HISTORY, size=size, color=t.NAVY),
-            ft.Container(
-                content=dots,
-                alignment=ft.alignment.center,
-                width=size,
-                height=size,
-                padding=ft.padding.only(top=size * 0.25),
-            ),
-        ],
-        width=size,
-        height=size,
-    )
+    import base64
+    s = size
+    # Triángulo sin base + 4 círculos teal apilados
+    cx = s / 2
+    # Triángulo: vértice arriba, dos lados sin base
+    tip_x, tip_y = cx, s * 0.05
+    left_x, left_y = s * 0.05, s * 0.92
+    right_x, right_y = s * 0.95, s * 0.92
+    stroke = max(1.5, s * 0.07)
+    # 4 círculos de mayor a menor, centrados, dentro del triángulo
+    circle_cx = cx
+    radii = [s * 0.13, s * 0.10, s * 0.08, s * 0.06]
+    total_h = sum(r * 2 for r in radii) + s * 0.04 * 3
+    start_y = s * 0.28
+    circles_svg = ""
+    y = start_y
+    for r in radii:
+        y += r
+        circles_svg += f'<circle cx="{circle_cx:.1f}" cy="{y:.1f}" r="{r:.1f}" fill="#03A097"/>'
+        y += r + s * 0.04
+
+    svg = f"""<svg viewBox="0 0 {s} {s}" xmlns="http://www.w3.org/2000/svg">
+  <polyline points="{left_x:.1f},{left_y:.1f} {tip_x:.1f},{tip_y:.1f} {right_x:.1f},{right_y:.1f}"
+    fill="none" stroke="#1A2E4D" stroke-width="{stroke:.1f}" stroke-linejoin="round" stroke-linecap="round"/>
+  {circles_svg}
+</svg>"""
+    b64 = base64.b64encode(svg.encode()).decode()
+    return ft.Image(src_base64=b64, width=size, height=size, fit=ft.ImageFit.CONTAIN)
 
 
 def alina_logo_lockup(mark_size: int = 22, text_size: int = 14) -> ft.Control:

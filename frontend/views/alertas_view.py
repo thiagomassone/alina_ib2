@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import datetime
 import flet as ft
 import theme as t
-from .components import card, card_label, divider, section_header
+from .components import card, card_label, divider, section_header, alina_logo_lockup
 
 # ── Iconos y colores por tipo de notificación ─────────────────────────────────
 
@@ -129,6 +129,7 @@ def alertas_view(page: ft.Page) -> ft.Control:
     list_col   = ft.Ref[ft.Column]()
     badge_text = ft.Ref[ft.Text]()
     badge_cont = ft.Ref[ft.Container]()
+    logo_cont  = ft.Ref[ft.Container]()
     empty_cont = ft.Ref[ft.Container]()
 
     def mark_read(notif_id: int):
@@ -158,6 +159,7 @@ def alertas_view(page: ft.Page) -> ft.Control:
         unread = sum(1 for n in notifs if not n["leida"])
         badge_text.current.value = str(unread)
         badge_cont.current.visible = unread > 0
+        logo_cont.current.visible = unread == 0
         empty_cont.current.visible = len(notifs) == 0
         list_col.current.controls = (
             [_notif_row(n, mark_read, last=(i == len(notifs) - 1)) for i, n in enumerate(notifs)]
@@ -179,14 +181,25 @@ def alertas_view(page: ft.Page) -> ft.Control:
                     [
                         ft.Container(
                             ref=badge_cont,
-                            content=ft.Text(ref=badge_text, value=str(unread), size=11, color=t.CARD, weight=ft.FontWeight.W_700),
+                            content=ft.Row(
+                                [
+                                    ft.Icon(ft.icons.NOTIFICATIONS_ACTIVE, size=14, color=t.CARD),
+                                    ft.Text(ref=badge_text, value=str(unread), size=11, color=t.CARD, weight=ft.FontWeight.W_700),
+                                ],
+                                spacing=4,
+                            ),
                             bgcolor=t.BAD,
                             border_radius=10,
-                            padding=ft.padding.symmetric(horizontal=7, vertical=2),
+                            padding=ft.padding.symmetric(horizontal=8, vertical=4),
                             visible=unread > 0,
                         ),
+                        ft.Container(
+                            ref=logo_cont,
+                            content=alina_logo_lockup(),
+                            visible=unread == 0,
+                        ),
                     ],
-                    spacing=6,
+                    spacing=0,
                 ),
             ),
             ft.Container(height=10),

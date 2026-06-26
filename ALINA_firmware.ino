@@ -100,9 +100,12 @@ unsigned int totalT1 = 0, malasT1 = 0;
 unsigned int totalT12 = 0, malasT12 = 0;
 
 // ─── Sesión activa ───────────────────────────────────────────────────────────
-bool sesionActiva = false;
-unsigned long tInicioSesion = 0, tUltimoMuestreo = 0;
-unsigned int alertasHapticas = 0;
+enum EstadoSesion { SESION_IDLE, SESION_RUNNING, SESION_PAUSED };
+EstadoSesion estadoSesion = SESION_IDLE;
+unsigned long tInicioSesion  = 0;   // ms cuando arrancó la sesión
+unsigned long tFinSesion     = 0;   // ms cuando se detuvo
+unsigned long tUltimoMuestreo = 0;
+unsigned int  alertasHapticas = 0;
 float minBuena = 0.0, minMala = 0.0;
 
 // ─── Vibración ───────────────────────────────────────────────────────────────
@@ -242,10 +245,13 @@ void wsEnviarAlerta(const char* fuente) {
 }
 
 void wsEnviarFinSesion() {
-  if (!sesionActiva) return;
-  float durMin = (millis() - tInicioSesion) / 60000.0;
-  StaticJsonDocument<128> doc;
+  if (estadoSesion == SESION_IDLE) return;
+  tFinSesion = millis();
+  float durMin = (tFinSesion - tInicioSesion) / 60000.0;
+  StaticJsonDocument<192> doc;
   doc["type"]             = "session_end";
+  doc["started_at_ms"]    = tInicioSesion;   // ms desde arranque del ESP
+  doc["ended_at_ms"]      = tFinSesion;
   doc["duracion_min"]     = durMin;
   doc["alertas_hapticas"] = alertasHapticas;
   doc["min_buena"]        = minBuena;
@@ -265,16 +271,48 @@ void procesarComando(const String &msg) {
   if (!cmd) return;
 
   if (strcmp(cmd, "start_session") == 0) {
-    sesionActiva = true;
-    tInicioSesion = millis();
+    estadoSesion    = SESION_RUNNING;
+    tInicioSesion   = millis();
     tUltimoMuestreo = millis();
     alertasHapticas = 0;
     minBuena = minMala = 0.0;
+    // Confirmar estado a la app
+    StaticJsonDocument<64> ack;
+    ack["type"]  = "session_status";
+    ack["state"] = "running";
+    ack["started_at_ms"] = tInicioSesion;
+    String aout; serializeJson(ack, aout); wsSend(aout);
     Serial.println("Sesión iniciada.");
+
+  } else if (strcmp(cmd, "pause_session") == 0) {
+    if (estadoSesion == SESION_RUNNING) {
+      estadoSesion = SESION_PAUSED;
+      StaticJsonDocument<32> ack;
+      ack["type"]  = "session_status";
+      ack["state"] = "paused";
+      String aout; serializeJson(ack, aout); wsSend(aout);
+      Serial.println("Sesión pausada.");
+    }
+
+  } else if (strcmp(cmd, "resume_session") == 0) {
+    if (estadoSesion == SESION_PAUSED) {
+      estadoSesion    = SESION_RUNNING;
+      tUltimoMuestreo = millis();   // resetear para no acumular el tiempo pausado
+      StaticJsonDocument<32> ack;
+      ack["type"]  = "session_status";
+      ack["state"] = "running";
+      String aout; serializeJson(ack, aout); wsSend(aout);
+      Serial.println("Sesión reanudada.");
+    }
 
   } else if (strcmp(cmd, "stop_session") == 0) {
     wsEnviarFinSesion();
-    sesionActiva = false;
+    estadoSesion = SESION_IDLE;
+    // Confirmar
+    StaticJsonDocument<32> ack;
+    ack["type"]  = "session_status";
+    ack["state"] = "idle";
+    String aout; serializeJson(ack, aout); wsSend(aout);
 
   } else if (strcmp(cmd, "calibrate") == 0) {
     xyzFloat aT1 = mpuT1.getAngles(), aT12 = mpuT12.getAngles();
@@ -511,7 +549,7 @@ void loop() {
     float t12p = aT12.y - refT12_pitch, t12r = aT12.x - refT12_roll;
 
     // Enviar postura al WebSocket (5 Hz)
-    if (wsClient >= 0 && estadoCalib == CALIBRADO && sesionActiva) {
+    if (wsClient >= 0 && estadoCalib == CALIBRADO && estadoSesion == SESION_RUNNING) {
       static unsigned long ultimoWS = 0;
       if (ahora - ultimoWS > 200) {
         wsEnviarPostura(t1p, t1r, t12p, t12r, aRPSIS.y, aRPSIS.x);
@@ -520,7 +558,7 @@ void loop() {
     }
 
     // Acumular min_buena / min_mala
-    if (sesionActiva && estadoCalib == CALIBRADO) {
+    if (estadoSesion == SESION_RUNNING && estadoCalib == CALIBRADO) {
       float dt = (ahora - tUltimoMuestreo) / 60000.0;
       tUltimoMuestreo = ahora;
       if (malaPosturaT1(t1p, t1r) || malaPosturaT12(t12p, t12r)) minMala  += dt;

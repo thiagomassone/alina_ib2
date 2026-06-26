@@ -647,6 +647,7 @@ def resumen_view(page: ft.Page) -> ft.Control:
     page.overlay.append(device_sheet)
 
     def open_device_sheet(_):
+        print("[SHEET] tocaron la tarjeta")
         device_sheet.open = True
         page.update()
 
@@ -663,7 +664,7 @@ def resumen_view(page: ft.Page) -> ft.Control:
             battery_pct=new_dev["battery"],
             calibrated=new_dev["calibrated"],
             connected=new_dev["connected"],
-        ).content
+        )
 
         # Actualizar score
         score_card_ref.current.content = _score_card(score=new_score).content
@@ -689,7 +690,7 @@ def resumen_view(page: ft.Page) -> ft.Control:
             battery_pct=battery,
             calibrated=cal,
             connected=connected,
-        ).content
+        )
         try:
             page.update()
         except Exception:
@@ -708,6 +709,20 @@ def resumen_view(page: ft.Page) -> ft.Control:
             page.update()
         except Exception:
             pass
+        
+    def on_alert_received():
+        """Llamado desde en_vivo cuando el ESP manda una alerta (vibró por mala postura)."""
+        try:
+            current = int(alertas_ref.current.value or "0")
+        except Exception:
+            current = 0
+        alertas_ref.current.value = str(current + 1)
+        try:
+            page.update()
+        except Exception:
+            pass
+
+
 
     # ── Construir UI ──────────────────────────────────────────────────────────
     col = ft.Column(
@@ -782,4 +797,5 @@ def resumen_view(page: ft.Page) -> ft.Control:
     col.refresh          = refresh
     col.on_device_change = on_device_change
     col.on_session_saved = on_session_saved
+    col.on_alert_received = on_alert_received
     return col

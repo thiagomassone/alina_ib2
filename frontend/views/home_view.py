@@ -62,6 +62,7 @@ def home_view(page: ft.Page) -> ft.View:
         if index == 2:
             page._historial_ctrl = view  # guardar ref global al historial
 
+
         if index == 1:
             # En vivo notifica al resumen e historial cuando guarda una sesión
             def _notify_all():
@@ -71,6 +72,23 @@ def home_view(page: ft.Page) -> ft.View:
                     page._historial_ctrl.refresh()
             if hasattr(view, "on_session_saved"):
                 view.on_session_saved = _notify_all
+
+            # En vivo notifica al resumen cuando llega una alerta del ESP
+            def _notify_alert():
+                if hasattr(page, "_resumen_ctrl") and hasattr(page._resumen_ctrl, "on_alert_received"):
+                    page._resumen_ctrl.on_alert_received()
+            if hasattr(view, "on_alert_relay"):
+                view.on_alert_relay = _notify_alert
+                
+        # if index == 1:
+        #     # En vivo notifica al resumen e historial cuando guarda una sesión
+        #     def _notify_all():
+        #         if hasattr(page, "_resumen_ctrl") and hasattr(page._resumen_ctrl, "on_session_saved"):
+        #             page._resumen_ctrl.on_session_saved()
+        #         if hasattr(page, "_historial_ctrl") and hasattr(page._historial_ctrl, "refresh"):
+        #             page._historial_ctrl.refresh()
+        #     if hasattr(view, "on_session_saved"):
+        #         view.on_session_saved = _notify_all
 
         page.update()
 

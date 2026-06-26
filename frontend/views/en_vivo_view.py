@@ -15,11 +15,31 @@ def _imu_color(status: str) -> str:
     return {"listo": t.GOOD, "calibrar": t.NEUTRAL, "desconectado": t.BAD}.get(status, t.BAD)
 
 
-def _back_svg_widget(imu_states: dict) -> ft.Control:
+# def _back_svg_widget(imu_states: dict) -> ft.Control:
+#     import base64
+#     sup = _imu_color(imu_states.get("dorsal_superior", "desconectado"))
+#     mid = _imu_color(imu_states.get("dorsal_medio",    "desconectado"))
+#     pel = _imu_color(imu_states.get("pelvis",          "desconectado"))
+def _back_svg_widget(imu_states: dict, postura_mala: dict | None = None, pulso: bool = False) -> ft.Control:
     import base64
     sup = _imu_color(imu_states.get("dorsal_superior", "desconectado"))
     mid = _imu_color(imu_states.get("dorsal_medio",    "desconectado"))
     pel = _imu_color(imu_states.get("pelvis",          "desconectado"))
+
+    postura_mala = postura_mala or {"t1": False, "t12": False}
+
+    # Radios del círculo según postura: normal=9, mala postura late entre 12 y 15
+    def _radio(zona: str) -> int:
+        if postura_mala.get(zona):
+            return 15 if pulso else 12
+        return 9
+    def _halo(zona: str) -> int:
+        if postura_mala.get(zona):
+            return 22 if pulso else 19
+        return 16
+
+    r_sup, h_sup = _radio("t12"), _halo("t12")
+    r_mid, h_mid = _radio("t1"),  _halo("t1")
 
     svg = f"""<svg viewBox="0 0 200 340" xmlns="http://www.w3.org/2000/svg">
   <ellipse cx="100" cy="28" rx="22" ry="26" fill="#D9E3EE"/>
@@ -29,12 +49,13 @@ def _back_svg_widget(imu_states: dict) -> ft.Control:
   <path d="M156 88 Q164 120 162 155 Q160 168 152 172 Q144 176 140 164 Q134 140 132 110 Q136 92 144 86Z" fill="#D9E3EE"/>
   <path d="M60 210 Q58 235 65 248 Q80 258 100 258 Q120 258 135 248 Q142 235 140 210Z" fill="#C8D6E8"/>
   <line x1="100" y1="68" x2="100" y2="228" stroke="#B0C4D8" stroke-width="1.5" stroke-dasharray="4,4"/>
-  <circle cx="100" cy="88"  r="16" fill="{sup}" opacity="0.2"/>
-  <circle cx="100" cy="88"  r="9"  fill="{sup}"/>
-  <circle cx="100" cy="88"  r="4"  fill="white" opacity="0.7"/>
-  <circle cx="100" cy="148" r="16" fill="{mid}" opacity="0.2"/>
-  <circle cx="100" cy="148" r="9"  fill="{mid}"/>
-  <circle cx="100" cy="148" r="4"  fill="white" opacity="0.7"/>
+  
+  <circle cx="100" cy="88"  r="{h_sup}" fill="{sup}" opacity="0.2"/>
+  <circle cx="100" cy="88"  r="{r_sup}" fill="{sup}"/>
+  <circle cx="100" cy="88"  r="4" fill="white" opacity="0.7"/>
+  <circle cx="100" cy="148" r="{h_mid}" fill="{mid}" opacity="0.2"/>
+  <circle cx="100" cy="148" r="{r_mid}" fill="{mid}"/>
+  <circle cx="100" cy="148" r="4" fill="white" opacity="0.7"/>
   <circle cx="100" cy="215" r="16" fill="{pel}" opacity="0.2"/>
   <circle cx="100" cy="215" r="9"  fill="{pel}"/>
   <circle cx="100" cy="215" r="4"  fill="white" opacity="0.7"/>
@@ -63,6 +84,10 @@ def en_vivo_view(page: ft.Page) -> ft.Control:
         "dorsal_medio":    "desconectado",
         "pelvis":          "desconectado",
     }
+    # Estado de postura en vivo (durante sesión): True = mala postura
+    postura_mala = {"t1": False, "t12": False}
+    # Alterna en cada mensaje recibido → genera el "latido" y prueba que entran datos
+    pulso_flag = {"on": False}
 
     # ── Controles reactivos ───────────────────────────────────────────────────
     back_img_ref = ft.Ref[ft.Image]()
@@ -166,6 +191,7 @@ def en_vivo_view(page: ft.Page) -> ft.Control:
         imu_states["dorsal_superior"] = "listo" if data.get("imu_t12") else "desconectado"
         imu_states["dorsal_medio"]    = "listo" if data.get("imu_t1")  else "desconectado"
         imu_states["pelvis"]          = "listo" if data.get("imu_rpsis") else "desconectado"
+        
 
         try:
             page.api.update_device_status(calibrated=bool(data.get("calibrated")))
@@ -184,6 +210,26 @@ def en_vivo_view(page: ft.Page) -> ft.Control:
 
         try: page.update()
         except: pass
+        
+    # Umbrales de mala postura (los mismos del firmware)
+    def _es_mala_t1(p, r):
+        return (p < -11.2) or (abs(r) > 22.4)
+    def _es_mala_t12(p, r):
+        return (p < -4.5)
+
+    def _on_posture(data: dict):
+        print(f"[POSTURE] {data}")   # ← temporal
+        # Calcular si cada zona está en mala postura
+        postura_mala["t1"]  = _es_mala_t1(data.get("t1_pitch", 0),  data.get("t1_roll", 0))
+        postura_mala["t12"] = _es_mala_t12(data.get("t12_pitch", 0), data.get("t12_roll", 0))
+        # Alternar el flag de pulso: cada mensaje lo da vuelta → genera el latido
+        pulso_flag["on"] = not pulso_flag["on"]
+        # Redibujar el muñequito con los nuevos tamaños
+        if back_img_ref.current:
+            new_img = _back_svg_widget(imu_states, postura_mala, pulso_flag["on"])
+            back_img_ref.current.src_base64 = new_img.src_base64
+        try: page.update()
+        except: pass
 
     def _on_session_end(data: dict):
         nonlocal last_session_data
@@ -191,8 +237,10 @@ def en_vivo_view(page: ft.Page) -> ft.Control:
         # Guardar sesión en el backend
         try:
             page.api.create_session(
-                started_at=session_start.isoformat() if session_start else datetime.now().isoformat(),
-                duracion_min=data.get("duracion_min", elapsed_seconds / 60),
+                # started_at=session_start.isoformat() if session_start else datetime.now().isoformat(),
+                # duracion_min=data.get("duracion_min", elapsed_seconds / 60),
+                started_at=page.session_start.isoformat() if page.session_start else datetime.now().isoformat(),
+                duracion_min=data.get("duracion_min", _elapsed_now() / 60),
                 alertas_hapticas=data.get("alertas_hapticas", 0),
                 min_buena=data.get("min_buena", 0.0),
                 min_mala=data.get("min_mala", 0.0),
@@ -220,12 +268,21 @@ def en_vivo_view(page: ft.Page) -> ft.Control:
             status_text.color = t.TEXT_MUTED
         try: page.update()
         except: pass
+        
+    def _on_alert(data: dict):
+        # El ESP vibró por mala postura → avisar al resumen para que sume +1
+        try:
+            on_alert_relay()
+        except Exception:
+            pass
 
     # Registrar callbacks si hay ws_client en page
     if ws:
         ws.on_connect        = _on_ws_connect
         ws.on_disconnect     = _on_ws_disconnect
         ws.on_status         = _on_status
+        ws.on_posture        = _on_posture
+        ws.on_alert          = _on_alert
         ws.on_session_end    = _on_session_end
         ws.on_session_status = _on_session_status
         if ws.connected:
@@ -422,6 +479,8 @@ def en_vivo_view(page: ft.Page) -> ft.Control:
             ws.on_connect        = _on_ws_connect
             ws.on_disconnect     = _on_ws_disconnect
             ws.on_status         = _on_status
+            ws.on_posture        = _on_posture
+            ws.on_alert          = _on_alert
             ws.on_session_end    = _on_session_end
             ws.on_session_status = _on_session_status
             # Actualizar estado de conexión
@@ -437,6 +496,9 @@ def en_vivo_view(page: ft.Page) -> ft.Control:
 
     # home_view sobreescribe esto con referencia al resumen
     def on_session_saved():
+        pass
+    
+    def on_alert_relay():
         pass
 
     col = ft.Column(
@@ -512,4 +574,5 @@ def en_vivo_view(page: ft.Page) -> ft.Control:
     )
     col.refresh          = refresh
     col.on_session_saved = on_session_saved
+    col.on_alert_relay   = on_alert_relay
     return col

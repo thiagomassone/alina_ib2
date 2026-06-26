@@ -94,6 +94,19 @@ def _build_device_sheet(page: ft.Page, device_name_text: ft.Text, card_name_text
         weight=ft.FontWeight.W_500,
     )
 
+    # def connect_esp(_):
+    #     ip = ip_field.value.strip()
+    #     if not ip:
+    #         return
+    #     page.esp_ip = ip
+    #     from ws_client import ALINAWebSocket
+    #     if not hasattr(page, "ws_client") or page.ws_client is None:
+    #         page.ws_client = ALINAWebSocket()
+    #     page.ws_client.connect(ip)
+    #     conn_status_text.value = "Conectando..."
+    #     conn_status_text.color = t.NEUTRAL
+    #     page.update()
+    
     def connect_esp(_):
         ip = ip_field.value.strip()
         if not ip:
@@ -102,6 +115,20 @@ def _build_device_sheet(page: ft.Page, device_name_text: ft.Text, card_name_text
         from ws_client import ALINAWebSocket
         if not hasattr(page, "ws_client") or page.ws_client is None:
             page.ws_client = ALINAWebSocket()
+
+        def _on_connected():
+            conn_status_text.value = "Conectado"
+            conn_status_text.color = t.GOOD
+            page.update()
+
+        def _on_disconnected():
+            conn_status_text.value = "Desconectado"
+            conn_status_text.color = t.BAD
+            page.update()
+
+        page.ws_client.on_connect = _on_connected
+        page.ws_client.on_disconnect = _on_disconnected
+
         page.ws_client.connect(ip)
         conn_status_text.value = "Conectando..."
         conn_status_text.color = t.NEUTRAL

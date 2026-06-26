@@ -154,6 +154,8 @@ def en_vivo_view(page: ft.Page) -> ft.Control:
 
         timer_running[0] = True
         threading.Thread(target=_tick, daemon=True).start()
+        # TODO: enviar start_session al ESP via WebSocket
+        # ws.send(json.dumps({"cmd": "start_session"}))
         page.update()
 
     def toggle_pause(_):
@@ -165,12 +167,16 @@ def en_vivo_view(page: ft.Page) -> ft.Control:
             pause_btn.style = ft.ButtonStyle(bgcolor=t.GOOD, color=t.CARD)
             status_text.value = "Sesión pausada"
             status_text.color = t.NEUTRAL
+            # TODO: enviar pause_session al ESP via WebSocket
+            # ws.send(json.dumps({"cmd": "pause_session"}))
         else:
             pause_btn.text  = "Pausar"
             pause_btn.icon  = ft.icons.PAUSE
             pause_btn.style = ft.ButtonStyle(bgcolor=t.NEUTRAL, color=t.CARD)
             status_text.value = "Sesión en curso"
             status_text.color = t.GOOD
+            # TODO: enviar resume_session al ESP via WebSocket
+            # ws.send(json.dumps({"cmd": "resume_session"}))
         page.update()
 
     def stop_session(_):
@@ -189,12 +195,20 @@ def en_vivo_view(page: ft.Page) -> ft.Control:
         status_text.color  = t.TEXT_MUTED
         timer_text.value   = "00:00"
 
-        # TODO: enviar resumen al backend vía api.create_session(...)
-        # duracion_min = elapsed_seconds / 60
-        # alertas_hapticas = contadas por el ESP32
+        # TODO: enviar stop_session al ESP via WebSocket
+        # El ESP responde con session_end que contiene:
+        # {started_at_ms, ended_at_ms, duracion_min, alertas_hapticas, min_buena, min_mala}
+        # La app recibe ese mensaje y hace POST a /sessions en el backend:
+        # page.api.create_session(
+        #     started_at = session_start.isoformat(),
+        #     duracion_min = duracion_min,
+        #     alertas_hapticas = alertas_hapticas,
+        #     min_buena = min_buena,
+        #     min_mala = min_mala,
+        # )
 
         page.snack_bar = ft.SnackBar(
-            ft.Text("Sesión finalizada — datos guardados al conectar el dispositivo", color=t.CARD),
+            ft.Text("Sesión finalizada — conectá el dispositivo para guardar los datos", color=t.CARD),
             bgcolor=t.NAVY,
         )
         page.snack_bar.open = True

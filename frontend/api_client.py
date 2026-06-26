@@ -15,20 +15,20 @@ class ApiClient:
         self._token: str | None = None
 
     # ─── Auth ───
-    def register(self, username: str, email: str, password: str) -> dict:
+    def register(self, nombre: str, apellido: str, email: str, password: str) -> dict:
         r = httpx.post(
             f"{self.base_url}/auth/register",
-            json={"username": username, "email": email, "password": password},
+            json={"nombre": nombre, "apellido": apellido, "email": email, "password": password},
             timeout=10,
         )
         r.raise_for_status()
         return r.json()
 
-    def login(self, username: str, password: str) -> str:
-        # OAuth2PasswordRequestForm espera form-encoded, no JSON.
+    def login(self, email: str, password: str) -> str:
+        # OAuth2PasswordRequestForm espera form-encoded; mandamos email en el campo "username"
         r = httpx.post(
             f"{self.base_url}/auth/login",
-            data={"username": username, "password": password},
+            data={"username": email, "password": password},
             timeout=10,
         )
         r.raise_for_status()
@@ -47,8 +47,38 @@ class ApiClient:
             raise RuntimeError("No hay sesión iniciada")
         return {"Authorization": f"Bearer {self._token}"}
 
-    # ─── Preferencias ───
-    def get_preferences(self) -> dict:
+    # ─── Perfil ───
+    def get_me(self) -> dict:
+        r = httpx.get(f"{self.base_url}/auth/me", headers=self._auth_headers(), timeout=10)
+        r.raise_for_status()
+        return r.json()
+
+    def update_profile(self, **fields) -> dict:
+        r = httpx.patch(
+            f"{self.base_url}/auth/me",
+            json={k: v for k, v in fields.items() if v is not None},
+            headers=self._auth_headers(), timeout=10,
+        )
+        r.raise_for_status()
+        return r.json()
+
+    def upload_foto(self, file_bytes: bytes, content_type: str) -> dict:
+        r = httpx.post(
+            f"{self.base_url}/auth/me/foto",
+            files={"file": ("foto", file_bytes, content_type)},
+            headers=self._auth_headers(), timeout=30,
+        )
+        r.raise_for_status()
+        return r.json()
+
+    def change_password(self, password_actual: str, password_nuevo: str) -> dict:
+        r = httpx.patch(
+            f"{self.base_url}/auth/me/change-password",
+            json={"password_actual": password_actual, "password_nuevo": password_nuevo},
+            headers=self._auth_headers(), timeout=10,
+        )
+        r.raise_for_status()
+        return r.json()
         r = httpx.get(
             f"{self.base_url}/preferences/me", headers=self._auth_headers(), timeout=10
         )
@@ -160,6 +190,42 @@ class ApiClient:
         """Borrar una sesión por ID."""
         r = httpx.delete(
             f"{self.base_url}/sessions/{session_id}",
+            headers=self._auth_headers(),
+            timeout=10,
+        )
+        r.raise_for_status()
+
+    # ─── Notificaciones ───
+    def get_notifications(self, limit: int = 50, solo_no_leidas: bool = False) -> list[dict]:
+        r = httpx.get(
+            f"{self.base_url}/notifications",
+            params={"limit": limit, "solo_no_leidas": solo_no_leidas},
+            headers=self._auth_headers(),
+            timeout=10,
+        )
+        r.raise_for_status()
+        return r.json()
+
+    def get_unread_count(self) -> int:
+        r = httpx.get(
+            f"{self.base_url}/notifications/unread_count",
+            headers=self._auth_headers(),
+            timeout=10,
+        )
+        r.raise_for_status()
+        return r.json()["count"]
+
+    def mark_notification_read(self, notification_id: int) -> None:
+        r = httpx.patch(
+            f"{self.base_url}/notifications/{notification_id}/read",
+            headers=self._auth_headers(),
+            timeout=10,
+        )
+        r.raise_for_status()
+
+    def mark_all_notifications_read(self) -> None:
+        r = httpx.patch(
+            f"{self.base_url}/notifications/read_all",
             headers=self._auth_headers(),
             timeout=10,
         )

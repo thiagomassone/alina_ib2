@@ -7,18 +7,36 @@ from pydantic import BaseModel, ConfigDict, EmailStr
 
 # ─── Usuarios ───
 class UserCreate(BaseModel):
-    username: str
+    nombre: str
+    apellido: str
     email: EmailStr
     password: str
 
 
 class UserOut(BaseModel):
     id: int
-    username: str
     email: EmailStr
     created_at: datetime
+    nombre: str | None = None
+    apellido: str | None = None
+    edad: int | None = None
+    sexo: str | None = None
+    foto_b64: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class UserProfileUpdate(BaseModel):
+    nombre: str | None = None
+    apellido: str | None = None
+    edad: int | None = None
+    sexo: str | None = None
+    email: EmailStr | None = None
+
+
+class ChangePasswordRequest(BaseModel):
+    password_actual: str
+    password_nuevo: str
 
 
 # ─── Login / Token ───
@@ -97,3 +115,15 @@ class ScoreSummary(BaseModel):
     total_alertas: int = 0       # suma de alertas hápticas del período
     total_min_buena: float = 0.0  # minutos totales en buena postura
     total_min_mala: float = 0.0   # minutos totales en mala postura
+
+
+# ─── Notificaciones ───
+class NotificationOut(BaseModel):
+    id: int
+    tipo: str
+    titulo: str
+    mensaje: str
+    leida: bool
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)

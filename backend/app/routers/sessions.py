@@ -8,7 +8,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session as DBSession
 
 from ..database import get_db
-from ..models import Session as SessionModel, User
+from ..models import Session as SessionModel, User, crear_notificacion
 from ..schemas import ScoreSummary, SessionCreate, SessionOut
 from ..security import get_current_user
 
@@ -27,17 +27,17 @@ def _calc_score(alertas: int, duracion_min: float) -> float:
     return max(0.0, round(100.0 - rate * _PENALTY_FACTOR, 1))
 
 
+
+# Umbral de score bajo para generar notificación
+_SCORE_BAJO = 65.0
+
+
 @router.post("", response_model=SessionOut, status_code=status.HTTP_201_CREATED)
 def create_session(
     payload: SessionCreate,
     db: DBSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    """Registrar una sesión completada.
-
-    Llamado por el ESP32 (vía WebSocket broker o directamente) o por la app
-    al cerrar una sesión de monitoreo.
-    """
     score = _calc_score(payload.alertas_hapticas, payload.duracion_min)
     session = SessionModel(
         user_id=current_user.id,
@@ -51,6 +51,21 @@ def create_session(
     db.add(session)
     db.commit()
     db.refresh(session)
+
+    # Notificación automática si el score es bajo
+    if score < _SCORE_BAJO:
+        mins = int(payload.duracion_min)
+        dur_str = f"{mins // 60}h {mins % 60:02d}m" if mins >= 60 else f"{mins} min"
+        crear_notificacion(
+            db=db,
+            user_id=current_user.id,
+            tipo="session_score_low",
+            titulo="Sesión con postura baja",
+            mensaje=f"Tu sesión del {payload.started_at.strftime('%d/%m a las %H:%M')} "
+                    f"({dur_str}) tuvo un score de {int(score)}/100. "
+                    f"Intentá mantener la espalda más erguida.",
+        )
+
     return session
 
 

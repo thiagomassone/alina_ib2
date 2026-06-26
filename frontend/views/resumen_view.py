@@ -8,7 +8,7 @@ from .components import card, card_label, dot, pill, divider, section_header
 
 # ─── Panel de dispositivo (BottomSheet) ──────────────────────────────────────
 
-def _build_device_sheet(page: ft.Page, device_name_text: ft.Text, card_name_text: ft.Text) -> ft.BottomSheet:
+def _build_device_sheet(page: ft.Page, device_name_text: ft.Text, card_name_text: ft.Text, haptic_init: int = 1000, battery_pct: int | None = None) -> ft.BottomSheet:
     """
     device_name_text : ft.Text del encabezado del sheet (modo display)
     card_name_text   : ft.Text de la tarjeta del Resumen — se actualiza al guardar
@@ -72,45 +72,123 @@ def _build_device_sheet(page: ft.Page, device_name_text: ft.Text, card_name_text
     confirm_btn.on_click = finish_edit
     name_field.on_submit = finish_edit
 
-    # ── Slider de vibración ───────────────────────────────────────────────────
-    haptic_slider = ft.Slider(
-        min=0, max=100, value=60,
-        active_color=t.TEAL,
-        inactive_color=t.TEAL_SOFT,
+    # ── Estado de conexión ───────────────────────────────────────────────────
+    ws = getattr(page, "ws_client", None)
+    is_connected = True  # TEST para validar opciones con conexion
+    #is_connected = ws is not None and ws.connected
+
+    # ── IP del dispositivo ────────────────────────────────────────────────────
+    ip_field = ft.TextField(
+        label="Dirección del dispositivo",
+        hint_text="alina.local o IP manual",
+        value=getattr(page, "esp_ip", "alina.local"),
+        border_color=t.DIVIDER,
+        focused_border_color=t.TEAL,
         expand=True,
+        disabled=False,  # siempre editable
+    )
+    conn_status_text = ft.Text(
+        "Conectado" if is_connected else "Desconectado",
+        size=12,
+        color=t.GOOD if is_connected else t.BAD,
+        weight=ft.FontWeight.W_500,
     )
 
-    status_text  = ft.Text("Conectado", size=13, color=t.GOOD, weight=ft.FontWeight.W_500)
-    battery_text = ft.Text("92%", size=13, color=t.TEXT_DARK, weight=ft.FontWeight.W_700)
+    def connect_esp(_):
+        ip = ip_field.value.strip()
+        if not ip:
+            return
+        page.esp_ip = ip
+        from ws_client import ALINAWebSocket
+        if not hasattr(page, "ws_client") or page.ws_client is None:
+            page.ws_client = ALINAWebSocket()
+        page.ws_client.connect(ip)
+        conn_status_text.value = "Conectando..."
+        conn_status_text.color = t.NEUTRAL
+        page.update()
 
-    def apply_intensity(_):
-        # TODO: enviar por WebSocket/BLE → ESP32 guarda en SD
+    # ── Slider de duración de vibración — 5 posiciones fijas ────────────────
+    _STEPS = [250, 500, 1000, 1500, 2000]
+    _LABELS = {250: "Muy corta", 500: "Corta", 1000: "Media", 1500: "Larga", 2000: "Muy larga"}
+
+    def _snap(val: float) -> int:
+        return min(_STEPS, key=lambda s: abs(s - val))
+
+    # Valor inicial: el más cercano al haptic_init guardado
+    _init_val = _snap(haptic_init)
+
+    slider_label = ft.Text(
+        _LABELS[_init_val],
+        size=13, color=t.TEAL, weight=ft.FontWeight.W_600,
+    )
+
+    def _on_slider_change(e):
+        snapped = _snap(float(e.control.value))
+        e.control.value = snapped
+        slider_label.value = _LABELS[snapped]
+        page.update()
+
+    haptic_slider = ft.Slider(
+        min=250, max=2000, value=_init_val,
+        divisions=4,
+        active_color=t.TEAL if is_connected else t.TEAL_SOFT,
+        inactive_color=t.TEAL_SOFT,
+        expand=True,
+        disabled=not is_connected,
+        on_change=_on_slider_change,
+    )
+
+    status_text  = ft.Text(
+        "Conectado" if is_connected else "Desconectado",
+        size=13,
+        color=t.GOOD if is_connected else t.BAD,
+        weight=ft.FontWeight.W_500,
+    )
+    battery_text = ft.Text(
+        f"{battery_pct}%" if battery_pct is not None else "—",
+        size=13, color=t.TEXT_DARK, weight=ft.FontWeight.W_700,
+    )
+
+    def apply_duration(_):
+        dur = _snap(float(haptic_slider.value))
         try:
-            page.api.update_device_status(haptic_intensity=int(haptic_slider.value))
+            page.api.update_device_status(haptic_intensity=dur)
         except Exception:
             pass
+        if ws and ws.connected:
+            ws.set_config(haptic_intensity=dur)
         page.snack_bar = ft.SnackBar(
-            ft.Text(f"Intensidad {int(haptic_slider.value)}% guardada", color=t.CARD),
+            ft.Text("Duración guardada en el dispositivo", color=t.CARD),
             bgcolor=t.TEAL,
         )
         page.snack_bar.open = True
         page.update()
 
+    def test_vibration(_):
+        if ws and ws.connected:
+            ws.test_vibration(_snap(float(haptic_slider.value)))
+            page.snack_bar = ft.SnackBar(
+                ft.Text("Probando vibración…", color=t.CARD), bgcolor=t.NAVY)
+            page.snack_bar.open = True
+            page.update()
+
     def calibrate(_):
-        # TODO: enviar comando de calibración por WebSocket/BLE
         from datetime import datetime
         ts = datetime.now().isoformat(timespec="seconds")
         try:
             page.api.update_device_status(last_calibration_at=ts, calibrated=True)
         except Exception:
             pass
-        page.snack_bar = ft.SnackBar(ft.Text("Calibración iniciada y registrada", color=t.CARD), bgcolor=t.TEAL)
+        if ws and ws.connected:
+            ws.calibrate()
+        page.snack_bar = ft.SnackBar(
+            ft.Text("Calibración iniciada", color=t.CARD), bgcolor=t.TEAL)
         page.snack_bar.open = True
         page.update()
 
     def toggle_power(_):
-        # TODO: enviar comando de encendido/apagado por WebSocket/BLE
-        page.snack_bar = ft.SnackBar(ft.Text("Comando enviado al dispositivo", color=t.CARD), bgcolor=t.NAVY)
+        page.snack_bar = ft.SnackBar(
+            ft.Text("Comando enviado al dispositivo", color=t.CARD), bgcolor=t.NAVY)
         page.snack_bar.open = True
         page.update()
 
@@ -152,8 +230,29 @@ def _build_device_sheet(page: ft.Page, device_name_text: ft.Text, card_name_text
 
                     divider(),
 
-                    # ── Vibración ─────────────────────────────────────────────
-                    ft.Text("Intensidad de vibración", size=12, color=t.TEXT_MUTED, weight=ft.FontWeight.W_600),
+                    # ── Conexión ──────────────────────────────────────────────
+                    ft.Text("Conexión", size=12, color=t.TEXT_MUTED, weight=ft.FontWeight.W_600),
+                    ft.Row(
+                        [ip_field, ft.FilledButton(
+                            "Conectar",
+                            icon=ft.icons.WIFI,
+                            on_click=connect_esp,
+                            style=ft.ButtonStyle(bgcolor=t.TEAL, color=t.CARD),
+                        )],
+                        spacing=8,
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                    ),
+                    ft.Row(
+                        [ft.Icon(ft.icons.CIRCLE, size=10,
+                                 color=t.GOOD if is_connected else t.BAD),
+                         conn_status_text],
+                        spacing=6,
+                    ),
+
+                    divider(),
+
+                    # ── Duración de vibración ─────────────────────────────────
+                    ft.Text("Duración de la vibración", size=12, color=t.TEXT_MUTED, weight=ft.FontWeight.W_600),
                     ft.Row(
                         [
                             ft.Text("−", size=20, color=t.TEXT_MUTED, weight=ft.FontWeight.W_300),
@@ -163,12 +262,33 @@ def _build_device_sheet(page: ft.Page, device_name_text: ft.Text, card_name_text
                         spacing=8,
                         vertical_alignment=ft.CrossAxisAlignment.CENTER,
                     ),
-                    ft.FilledButton(
-                        "Aplicar intensidad",
-                        icon=ft.icons.VIBRATION,
-                        on_click=apply_intensity,
-                        style=ft.ButtonStyle(bgcolor=t.NAVY, color=t.CARD),
-                        width=float("inf"),
+                    ft.Row(
+                        [
+                            ft.OutlinedButton(
+                                "Probar",
+                                icon=ft.icons.VIBRATION,
+                                on_click=test_vibration,
+                                disabled=not is_connected,
+                                style=ft.ButtonStyle(
+                                    color=t.TEAL if is_connected else t.TEXT_LIGHT,
+                                    side=ft.BorderSide(1, t.TEAL if is_connected else t.DIVIDER),
+                                    shape=ft.RoundedRectangleBorder(radius=8),
+                                ),
+                                expand=True,
+                            ),
+                            ft.FilledButton(
+                                "Aplicar",
+                                icon=ft.icons.CHECK,
+                                on_click=apply_duration,
+                                disabled=not is_connected,
+                                style=ft.ButtonStyle(
+                                    bgcolor=t.NAVY if is_connected else t.DIVIDER,
+                                    color=t.CARD,
+                                ),
+                                expand=True,
+                            ),
+                        ],
+                        spacing=8,
                     ),
 
                     divider(),
@@ -179,22 +299,30 @@ def _build_device_sheet(page: ft.Page, device_name_text: ft.Text, card_name_text
                         "Calibrar equipo",
                         icon=ft.icons.TUNE,
                         on_click=calibrate,
-                        style=ft.ButtonStyle(bgcolor=t.TEAL, color=t.CARD),
+                        disabled=not is_connected,
+                        style=ft.ButtonStyle(
+                            bgcolor=t.TEAL if is_connected else t.DIVIDER,
+                            color=t.CARD,
+                        ),
                         width=float("inf"),
                     ),
                     ft.Container(height=2),
                     ft.OutlinedButton(
                         content=ft.Row(
                             [
-                                ft.Icon(ft.icons.POWER_SETTINGS_NEW, color=t.BAD, size=18),
-                                ft.Text("Apagar dispositivo", size=14, color=t.BAD, weight=ft.FontWeight.W_500),
+                                ft.Icon(ft.icons.POWER_SETTINGS_NEW,
+                                        color=t.BAD if is_connected else t.TEXT_LIGHT, size=18),
+                                ft.Text("Apagar dispositivo", size=14,
+                                        color=t.BAD if is_connected else t.TEXT_LIGHT,
+                                        weight=ft.FontWeight.W_500),
                             ],
                             spacing=8,
                             alignment=ft.MainAxisAlignment.CENTER,
                         ),
                         on_click=toggle_power,
+                        disabled=not is_connected,
                         style=ft.ButtonStyle(
-                            side=ft.BorderSide(1, t.BAD),
+                            side=ft.BorderSide(1, t.BAD if is_connected else t.DIVIDER),
                             shape=ft.RoundedRectangleBorder(radius=8),
                         ),
                         width=float("inf"),
@@ -453,7 +581,8 @@ def resumen_view(page: ft.Page) -> ft.Control:
         battery_pct     = ds.get("battery_pct")
         haptic_init     = ds.get("haptic_intensity", 60)
         calibrated      = ds.get("calibrated", False)
-        connected       = True   # TODO: reemplazar con estado real del WebSocket/BLE
+        ws = getattr(page, "ws_client", None)
+        connected = ws is not None and ws.connected
     except Exception:
         initial_name, battery_pct, haptic_init, calibrated, connected = "ALINA Dispositivo", None, 60, False, False
 
@@ -461,7 +590,7 @@ def resumen_view(page: ft.Page) -> ft.Control:
     card_name_text = ft.Text(initial_name, size=14, weight=ft.FontWeight.W_600, color=t.TEXT_DARK)
     sheet_name_text = ft.Text(initial_name, size=16, weight=ft.FontWeight.W_700, color=t.TEXT_DARK)
 
-    device_sheet = _build_device_sheet(page, sheet_name_text, card_name_text)
+    device_sheet = _build_device_sheet(page, sheet_name_text, card_name_text, haptic_init=haptic_init, battery_pct=battery_pct)
     page.overlay.append(device_sheet)
 
     def open_device_sheet(_):

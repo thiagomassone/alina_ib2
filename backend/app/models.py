@@ -17,6 +17,13 @@ class User(Base):
     hashed_password: Mapped[str] = mapped_column(String(255))
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
+    # Perfil extendido
+    nombre: Mapped[str | None] = mapped_column(String(64), default=None, nullable=True)
+    apellido: Mapped[str | None] = mapped_column(String(64), default=None, nullable=True)
+    edad: Mapped[int | None] = mapped_column(Integer, default=None, nullable=True)
+    sexo: Mapped[str | None] = mapped_column(String(16), default=None, nullable=True)  # M / F / otro
+    foto_b64: Mapped[str | None] = mapped_column(Text, default=None, nullable=True)  # base64
+
     preferences: Mapped["UserPreferences"] = relationship(
         "UserPreferences", back_populates="user", uselist=False, cascade="all, delete-orphan"
     )
@@ -85,6 +92,42 @@ class Session(Base):
     user: Mapped["User"] = relationship("User", back_populates="sessions")
 
 
+class Notification(Base):
+    """Notificaciones del sistema para el usuario.
+
+    Tipos posibles:
+    - session_score_low   : sesión finalizada con score bajo
+    - device_disconnected : el dispositivo se desconectó repentinamente
+    - haptic_alert        : alerta háptica durante sesión (T1 o T12)
+    - password_changed    : el usuario cambió su contraseña
+    - calibration_pending : lleva N días sin calibrar
+    """
+
+    __tablename__ = "notifications"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), index=True)
+    tipo: Mapped[str] = mapped_column(String(64))
+    titulo: Mapped[str] = mapped_column(String(128))
+    mensaje: Mapped[str] = mapped_column(String(512))
+    leida: Mapped[bool] = mapped_column(default=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    user: Mapped["User"] = relationship("User", back_populates="notifications")
+
+
 # Agregar relación inversa en User
 User.sessions = relationship("Session", back_populates="user", cascade="all, delete-orphan")
 User.device_status = relationship("DeviceStatus", back_populates="user", uselist=False, cascade="all, delete-orphan")
+User.notifications = relationship("Notification", back_populates="user", cascade="all, delete-orphan")
+
+
+def crear_notificacion(db, user_id: int, tipo: str, titulo: str, mensaje: str) -> Notification:
+    """Crear y persistir una notificación. Importar desde models para evitar circular imports."""
+    notif = Notification(
+        user_id=user_id, tipo=tipo, titulo=titulo, mensaje=mensaje,
+        created_at=datetime.utcnow(),
+    )
+    db.add(notif)
+    db.commit()
+    return notif

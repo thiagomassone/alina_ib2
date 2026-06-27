@@ -22,7 +22,7 @@ _TABS = [
 ]
 
 # Tabs que tienen refresh automático (índices)
-_REFRESHABLE_TABS = {0, 1}  # Resumen, En vivo
+_REFRESHABLE_TABS = {0, 1, 3}  # Resumen, En vivo, Análisis
 _REFRESH_INTERVAL = 3  # segundos
 
 

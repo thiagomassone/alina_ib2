@@ -3,7 +3,7 @@
 from __future__ import annotations
 import flet as ft
 import theme as t
-from .components import card, card_label, divider, section_header
+from .components import card, card_label, divider, section_header, show_snack
 
 
 def _avatar(foto_b64: str | None, nombre: str, size: int = 52) -> ft.Control:
@@ -59,12 +59,7 @@ def _edit_profile_view(page: ft.Page, user: dict, on_saved) -> ft.View:
     status_text = ft.Text("", size=13, visible=False)  # kept for compat, hidden
 
     def _show_snack(msg: str, color: str):
-        page.snack_bar = ft.SnackBar(
-            ft.Text(msg, color=t.CARD),
-            bgcolor=color,
-        )
-        page.snack_bar.open = True
-        page.update()
+        show_snack(page, msg, bgcolor=color)
     foto_status = ft.Text("", size=11, color=t.TEXT_MUTED)
     avatar_ref  = ft.Ref[ft.Container]()
 

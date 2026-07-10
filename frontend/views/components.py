@@ -5,6 +5,39 @@ import flet as ft
 import theme as t
 
 
+# ── Notificaciones ────────────────────────────────────────────────────────────
+
+def show_snack(page: ft.Page, message: str, bgcolor: str | None = None, color: str | None = None) -> None:
+    """Reemplazo de `page.snack_bar = ft.SnackBar(...); page.snack_bar.open = True`.
+
+    Ese patrón (deprecado en Flet 0.24, se saca en 0.26) cuelga el SnackBar de
+    un slot del Scaffold que queda TAPADO por cualquier modal — por ejemplo el
+    BottomSheet de "Estado del dispositivo" en Resumen: si el sheet está
+    abierto, el snackbar se sigue disparando pero no se ve, queda atrás.
+
+    Esta versión usa `page.overlay`, el mismo mecanismo con el que se agregan
+    los sheets modales, y siempre se reinserta al FINAL de esa lista antes de
+    abrirse — así queda por encima de cualquier sheet que se haya agregado
+    después (los sheets también son reordenados al reabrirse, ver
+    resumen_view.py), sin importar cuál se agregó primero.
+    """
+    snack = getattr(page, "_snack", None)
+    if snack is None:
+        snack = ft.SnackBar(content=ft.Text(""), open=False)
+        page._snack = snack
+    elif snack in page.overlay:
+        page.overlay.remove(snack)
+    page.overlay.append(snack)
+
+    snack.content = ft.Text(message, color=color or t.CARD)
+    snack.bgcolor = bgcolor or t.NAVY
+    snack.open = True
+    try:
+        page.update()
+    except Exception:
+        pass
+
+
 # ── Logo ─────────────────────────────────────────────────────────────────────
 
 def alina_logo_mark(size: int = 32) -> ft.Control:

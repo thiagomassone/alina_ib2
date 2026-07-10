@@ -42,8 +42,16 @@ def _fmt_session(s: dict) -> dict:
 
 
 def _fmt_min(m: float) -> str:
-    m = int(m)
-    return f"{m // 60}h {m % 60:02d}m" if m >= 60 else f"{m}m"
+    """m viene en minutos (float). Siempre muestra minutos + segundos con
+    1 decimal (ej. "3m 54.2s"), salvo que pase la hora, donde vuelve al
+    formato "Xh YYm" (los segundos ya no aportan nada a esa escala)."""
+    total_sec = m * 60
+    if total_sec >= 3600:
+        mins = int(m)
+        return f"{mins // 60}h {mins % 60:02d}m"
+    mins = int(total_sec // 60)
+    secs = total_sec - mins * 60
+    return f"{mins}m {secs:.1f}s"
 
 
 # ── Score badge ───────────────────────────────────────────────────────────────

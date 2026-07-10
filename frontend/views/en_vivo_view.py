@@ -6,40 +6,51 @@ import threading
 from datetime import datetime
 import flet as ft
 import theme as t
-from .components import card, card_label, section_header
+from .components import card, card_label, section_header, show_snack
 
 
 # ─── SVG de espalda con IMUs ─────────────────────────────────────────────────
 
 def _imu_color(status: str) -> str:
-    return {"listo": t.GOOD, "calibrar": t.NEUTRAL, "desconectado": t.BAD}.get(status, t.BAD)
+    return {"listo": t.GOOD, "calibrar": t.NEUTRAL, "desconectado": t.TEXT_LIGHT}.get(status, t.TEXT_LIGHT)
 
 
-# def _back_svg_widget(imu_states: dict) -> ft.Control:
-#     import base64
-#     sup = _imu_color(imu_states.get("dorsal_superior", "desconectado"))
-#     mid = _imu_color(imu_states.get("dorsal_medio",    "desconectado"))
-#     pel = _imu_color(imu_states.get("pelvis",          "desconectado"))
-def _back_svg_widget(imu_states: dict, postura_mala: dict | None = None, pulso: bool = False) -> ft.Control:
+# NOTA: la base (silueta + puntos T1/T12/pelvis) ya NO codifica "mala postura"
+# con color ni tamaño — eso ahora es el aro rojo animado que se superpone
+# encima (ver _pulse_dot en el entry point), con animación nativa de Flet en
+# vez de re-generar la imagen entera. Los puntos acá solo reflejan conexión/
+# calibración (verde=listo, ámbar=pendiente de calibrar, gris=desconectado).
+def _back_svg_widget(
+    imu_states: dict,
+    angles: dict | None = None,
+    img_ref: "ft.Ref | None" = None,
+) -> ft.Control:
+    """angles: {"t1_pitch", "t1_roll", "t12_pitch", "t12_roll"} — si viene None
+    (todavía no llegó ningún mensaje de postura) se muestran guiones "-" en
+    vez de ocultar el texto: los números siempre están en el mismo lugar,
+    así no aparecen/desaparecen de la nada al iniciar o cortar una sesión."""
     import base64
+
+    # dorsal_superior = círculo de arriba = T1 (cerca del cuello)
+    # dorsal_medio     = círculo del medio = T12 (más abajo)
     sup = _imu_color(imu_states.get("dorsal_superior", "desconectado"))
     mid = _imu_color(imu_states.get("dorsal_medio",    "desconectado"))
-    pel = _imu_color(imu_states.get("pelvis",          "desconectado"))
+    pel = _imu_color(imu_states.get("pelvis",           "desconectado"))
 
-    postura_mala = postura_mala or {"t1": False, "t12": False}
+    # Números de pitch/roll al lado de cada círculo — siempre se dibujan;
+    # si todavía no llegó postura (angles is None) se muestra "-".
+    a = angles or {}
+    def _f(key: str) -> str:
+        v = a.get(key)
+        return f"{v:+.1f}°" if v is not None else "-"
 
-    # Radios del círculo según postura: normal=9, mala postura late entre 12 y 15
-    def _radio(zona: str) -> int:
-        if postura_mala.get(zona):
-            return 15 if pulso else 12
-        return 9
-    def _halo(zona: str) -> int:
-        if postura_mala.get(zona):
-            return 22 if pulso else 19
-        return 16
-
-    r_sup, h_sup = _radio("t12"), _halo("t12")
-    r_mid, h_mid = _radio("t1"),  _halo("t1")
+    angulos_svg = f"""
+  <text x="132" y="76" font-size="8" fill="{t.TEXT_MUTED}" font-family="sans-serif">T1</text>
+  <text x="132" y="87" font-size="9" font-weight="700" fill="{t.TEXT_DARK}" font-family="sans-serif">P {_f("t1_pitch")}</text>
+  <text x="132" y="98" font-size="9" font-weight="700" fill="{t.TEXT_DARK}" font-family="sans-serif">R {_f("t1_roll")}</text>
+  <text x="132" y="136" font-size="8" fill="{t.TEXT_MUTED}" font-family="sans-serif">T12</text>
+  <text x="132" y="147" font-size="9" font-weight="700" fill="{t.TEXT_DARK}" font-family="sans-serif">P {_f("t12_pitch")}</text>
+  <text x="132" y="158" font-size="9" font-weight="700" fill="{t.TEXT_DARK}" font-family="sans-serif">R {_f("t12_roll")}</text>"""
 
     svg = f"""<svg viewBox="0 0 200 340" xmlns="http://www.w3.org/2000/svg">
   <ellipse cx="100" cy="28" rx="22" ry="26" fill="#D9E3EE"/>
@@ -50,19 +61,40 @@ def _back_svg_widget(imu_states: dict, postura_mala: dict | None = None, pulso: 
   <path d="M60 210 Q58 235 65 248 Q80 258 100 258 Q120 258 135 248 Q142 235 140 210Z" fill="#C8D6E8"/>
   <line x1="100" y1="68" x2="100" y2="228" stroke="#B0C4D8" stroke-width="1.5" stroke-dasharray="4,4"/>
   
-  <circle cx="100" cy="88"  r="{h_sup}" fill="{sup}" opacity="0.2"/>
-  <circle cx="100" cy="88"  r="{r_sup}" fill="{sup}"/>
+  <circle cx="100" cy="88"  r="16" fill="{sup}" opacity="0.2"/>
+  <circle cx="100" cy="88"  r="9" fill="{sup}"/>
   <circle cx="100" cy="88"  r="4" fill="white" opacity="0.7"/>
-  <circle cx="100" cy="148" r="{h_mid}" fill="{mid}" opacity="0.2"/>
-  <circle cx="100" cy="148" r="{r_mid}" fill="{mid}"/>
+  <circle cx="100" cy="148" r="16" fill="{mid}" opacity="0.2"/>
+  <circle cx="100" cy="148" r="9" fill="{mid}"/>
   <circle cx="100" cy="148" r="4" fill="white" opacity="0.7"/>
   <circle cx="100" cy="215" r="16" fill="{pel}" opacity="0.2"/>
   <circle cx="100" cy="215" r="9"  fill="{pel}"/>
-  <circle cx="100" cy="215" r="4"  fill="white" opacity="0.7"/>
+  <circle cx="100" cy="215" r="4"  fill="white" opacity="0.7"/>{angulos_svg}
 </svg>"""
     return ft.Image(
+        ref=img_ref,
         src_base64=base64.b64encode(svg.encode()).decode(),
         width=200, height=340, fit=ft.ImageFit.CONTAIN,
+    )
+
+
+def _pulse_dot(cx: int, cy: int, dot_ref: "ft.Ref[ft.Container]") -> ft.Container:
+    """Aro rojo que se superpone a un punto del diagrama cuando hay mala
+    postura. Empieza invisible (opacity=0); un hilo en el entry point lo hace
+    crecer/achicarse con las transiciones nativas de Flet (animate/animate_opacity),
+    que interpolan solas y quedan fluidas sin importar la tasa de refresco de
+    la pantalla — a diferencia de la versión vieja, que reemplazaba toda la
+    imagen 5 veces por segundo y saltaba entre 2 tamaños fijos."""
+    size = 18
+    return ft.Container(
+        ref=dot_ref,
+        left=cx - size / 2, top=cy - size / 2,
+        width=size, height=size,
+        border_radius=size,
+        bgcolor=t.BAD,
+        opacity=0,
+        animate=ft.animation.Animation(450, ft.AnimationCurve.EASE_IN_OUT),
+        animate_opacity=ft.animation.Animation(450, ft.AnimationCurve.EASE_IN_OUT),
     )
 
 
@@ -86,22 +118,14 @@ def en_vivo_view(page: ft.Page) -> ft.Control:
     }
     # Estado de postura en vivo (durante sesión): True = mala postura
     postura_mala = {"t1": False, "t12": False}
-    # Alterna en cada mensaje recibido → genera el "latido" y prueba que entran datos
-    pulso_flag = {"on": False}
 
     # ── Controles reactivos ───────────────────────────────────────────────────
-    back_img_ref = ft.Ref[ft.Image]()
+    back_img_ref  = ft.Ref[ft.Image]()
+    t1_pulse_ref  = ft.Ref[ft.Container]()
+    t12_pulse_ref = ft.Ref[ft.Container]()
     timer_text  = ft.Text("00:00", size=32, weight=ft.FontWeight.W_700, color=t.TEXT_DARK)
     status_text = ft.Text("Sin sesión activa", size=13, color=t.TEXT_MUTED)
     conn_status = ft.Text("Desconectado", size=13, color=t.TEXT_MUTED)
-
-    # Ángulos en vivo (pitch/roll de T1 y T12) — se actualizan en _on_posture.
-    # Solo llegan datos mientras hay una sesión de monitoreo activa (así lo
-    # manda el firmware), por eso arrancan en "—" hasta el primer mensaje.
-    t1_pitch_ref  = ft.Ref[ft.Text]()
-    t1_roll_ref   = ft.Ref[ft.Text]()
-    t12_pitch_ref = ft.Ref[ft.Text]()
-    t12_roll_ref  = ft.Ref[ft.Text]()
 
     start_btn = ft.FilledButton(
         "Iniciar sesión", icon=ft.icons.PLAY_ARROW,
@@ -196,8 +220,8 @@ def en_vivo_view(page: ft.Page) -> ft.Control:
         except: pass
 
     def _on_status(data: dict):
-        imu_states["dorsal_superior"] = "listo" if data.get("imu_t12") else "desconectado"
-        imu_states["dorsal_medio"]    = "listo" if data.get("imu_t1")  else "desconectado"
+        imu_states["dorsal_superior"] = "listo" if data.get("imu_t1")  else "desconectado"
+        imu_states["dorsal_medio"]    = "listo" if data.get("imu_t12") else "desconectado"
         imu_states["pelvis"]          = "listo" if data.get("imu_rpsis") else "desconectado"
         
 
@@ -219,33 +243,69 @@ def en_vivo_view(page: ft.Page) -> ft.Control:
         try: page.update()
         except: pass
         
-    # Umbrales de mala postura (los mismos del firmware)
+    # Umbrales de mala postura (los mismos del firmware) — se usan tanto para
+    # decidir el color/aro en vivo acá como referencia visual; la alerta real
+    # (vibración) la decide el ESP con su propia ventana deslizante, así que
+    # esto puede marcar "mala" antes de que el dispositivo llegue a vibrar.
     def _es_mala_t1(p, r):
         return (p < -11.2) or (abs(r) > 22.4)
     def _es_mala_t12(p, r):
         return (p < -4.5)
 
     def _on_posture(data: dict):
-        print(f"[POSTURE] {data}")   # ← temporal
+        # Los ángulos solo tienen sentido durante una sesión activa — si el
+        # ESP manda "posture" fuera de sesión (o llega alguno colgado justo
+        # al cortar), lo ignoramos en vez de mostrar un 0.0° que parece un
+        # dato real y no lo es. Fuera de sesión el diagrama se queda en "-",
+        # igual que cuando está desconectado.
+        if not page.session_active:
+            return
         t1p, t1r   = data.get("t1_pitch", 0),  data.get("t1_roll", 0)
         t12p, t12r = data.get("t12_pitch", 0), data.get("t12_roll", 0)
-        # Calcular si cada zona está en mala postura
+        # Calcular si cada zona está en mala postura — el hilo de pulso (más
+        # abajo) lee este dict y anima los aros solo, no hace falta redibujar
+        # nada acá para eso.
         postura_mala["t1"]  = _es_mala_t1(t1p, t1r)
         postura_mala["t12"] = _es_mala_t12(t12p, t12r)
-        # Alternar el flag de pulso: cada mensaje lo da vuelta → genera el latido
-        pulso_flag["on"] = not pulso_flag["on"]
-        # Redibujar el muñequito con los nuevos tamaños
+        # Redibujar el muñequito solo para actualizar los números de ángulo
+        # (esto sí regenera la imagen base, pero ya no incluye el pulso —
+        # el pulso es 100% del hilo de abajo, con animación nativa de Flet,
+        # así que regenerar la imagen para los números no lo interrumpe).
         if back_img_ref.current:
-            new_img = _back_svg_widget(imu_states, postura_mala, pulso_flag["on"])
+            angles = {"t1_pitch": t1p, "t1_roll": t1r, "t12_pitch": t12p, "t12_roll": t12r}
+            new_img = _back_svg_widget(imu_states, angles)
             back_img_ref.current.src_base64 = new_img.src_base64
-        # Actualizar los números de ángulo en vivo
-        if t1_pitch_ref.current:
-            t1_pitch_ref.current.value  = f"{t1p:+.1f}°"
-            t1_roll_ref.current.value   = f"{t1r:+.1f}°"
-            t12_pitch_ref.current.value = f"{t12p:+.1f}°"
-            t12_roll_ref.current.value  = f"{t12r:+.1f}°"
         try: page.update()
         except: pass
+
+    # ── Hilo del latido — anima los aros con transiciones nativas de Flet ────
+    pulse_running = [True]
+
+    def _pulse_loop():
+        grown = False
+        while pulse_running[0]:
+            time.sleep(0.55)
+            grown = not grown
+            for zona, ref, (cx, cy) in (
+                ("t1",  t1_pulse_ref,  (100, 88)),
+                ("t12", t12_pulse_ref, (100, 148)),
+            ):
+                dot = ref.current
+                if not dot:
+                    continue
+                if postura_mala.get(zona):
+                    size = 30 if grown else 16
+                    dot.width = size
+                    dot.height = size
+                    dot.left = cx - size / 2
+                    dot.top = cy - size / 2
+                    dot.opacity = 0.65 if grown else 0.4
+                else:
+                    dot.opacity = 0
+            try: page.update()
+            except: pass
+
+    threading.Thread(target=_pulse_loop, daemon=True).start()
 
     def _on_session_end(data: dict):
         nonlocal last_session_data
@@ -261,15 +321,10 @@ def en_vivo_view(page: ft.Page) -> ft.Control:
                 min_buena=data.get("min_buena", 0.0),
                 min_mala=data.get("min_mala", 0.0),
             )
-            page.snack_bar = ft.SnackBar(
-                ft.Text("Sesión guardada correctamente", color=t.CARD), bgcolor=t.TEAL)
+            show_snack(page, "Sesión guardada correctamente", bgcolor=t.TEAL)
             on_session_saved()  # notificar al resumen
         except Exception as e:
-            page.snack_bar = ft.SnackBar(
-                ft.Text(f"Error guardando sesión: {e}", color=t.CARD), bgcolor=t.BAD)
-        page.snack_bar.open = True
-        try: page.update()
-        except: pass
+            show_snack(page, f"Error guardando sesión: {e}", bgcolor=t.BAD)
 
     def _on_session_status(data: dict):
         state = data.get("state")
@@ -448,13 +503,9 @@ def en_vivo_view(page: ft.Page) -> ft.Control:
                     min_buena=0.0,
                     min_mala=0.0,
                 )
-                page.snack_bar = ft.SnackBar(
-                    ft.Text("Sesión guardada (sin datos del dispositivo)", color=t.CARD),
-                    bgcolor=t.NEUTRAL)
+                show_snack(page, "Sesión guardada (sin datos del dispositivo)", bgcolor=t.NEUTRAL)
             except Exception as e:
-                page.snack_bar = ft.SnackBar(
-                    ft.Text(f"Error: {e}", color=t.CARD), bgcolor=t.BAD)
-            page.snack_bar.open = True
+                show_snack(page, f"Error: {e}", bgcolor=t.BAD)
         # Limpiar estado de sesión
         page.session_start        = None
         page.session_paused_total = 0.0
@@ -462,6 +513,14 @@ def en_vivo_view(page: ft.Page) -> ft.Control:
         status_text.value = "Sin sesión activa"
         status_text.color = t.TEXT_MUTED
         timer_text.value  = "00:00"
+        # Los ángulos y los aros de mala postura son datos de la sesión que
+        # terminó — volver a "-" y apagar los aros en vez de dejar el último
+        # valor pegado en pantalla.
+        postura_mala["t1"]  = False
+        postura_mala["t12"] = False
+        if back_img_ref.current:
+            new_img = _back_svg_widget(imu_states)
+            back_img_ref.current.src_base64 = new_img.src_base64
         page.update()
 
     start_btn.on_click  = start_session
@@ -525,8 +584,20 @@ def en_vivo_view(page: ft.Page) -> ft.Control:
                         ft.Row(
                             [
                                 ft.Container(
-                                    content=_back_svg_widget(imu_states),
-                                    ref=back_img_ref,
+                                    content=ft.Stack(
+                                        [
+                                            _back_svg_widget(imu_states, img_ref=back_img_ref),
+                                            _pulse_dot(100, 88,  t1_pulse_ref),
+                                            _pulse_dot(100, 148, t12_pulse_ref),
+                                        ],
+                                        width=200, height=340,
+                                    ),
+                                    # El Stack de adentro necesita medidas fijas (200x340) para
+                                    # que los aros de pulso se superpongan en el lugar correcto
+                                    # sobre el SVG. Este Container de afuera sí es elástico
+                                    # (expand=True) para ocupar el espacio libre del Row y
+                                    # centrar el dibujo ahí — si no, queda pegado a la izquierda
+                                    # y no se recentra al agrandar la ventana.
                                     expand=True,
                                     alignment=ft.alignment.center,
                                 ),
@@ -534,9 +605,10 @@ def en_vivo_view(page: ft.Page) -> ft.Control:
                                     [
                                         ft.Text("Estado", size=11, color=t.TEXT_MUTED, weight=ft.FontWeight.W_600),
                                         ft.Container(height=6),
-                                        _legend_item(t.GOOD,    "Listo"),
-                                        _legend_item(t.NEUTRAL, "Pendiente de calibrar"),
-                                        _legend_item(t.BAD,     "Desconectado"),
+                                        _legend_item(t.GOOD,       "Listo"),
+                                        _legend_item(t.NEUTRAL,    "Pendiente de calibrar"),
+                                        _legend_item(t.BAD,        "Mala postura"),
+                                        _legend_item(t.TEXT_LIGHT, "Desconectado"),
                                     ],
                                     spacing=6,
                                     horizontal_alignment=ft.CrossAxisAlignment.START,
@@ -544,50 +616,6 @@ def en_vivo_view(page: ft.Page) -> ft.Control:
                             ],
                             vertical_alignment=ft.CrossAxisAlignment.CENTER,
                             spacing=8,
-                        ),
-                    ],
-                    spacing=0,
-                )
-            ),
-
-            # ── Ángulos en vivo ──────────────────────────────────────────────
-            card(
-                ft.Column(
-                    [
-                        card_label("Ángulos en vivo"),
-                        ft.Text("Se actualizan mientras hay una sesión activa", size=10, color=t.TEXT_LIGHT),
-                        ft.Container(height=8),
-                        ft.Row(
-                            [
-                                ft.Column(
-                                    [
-                                        ft.Text("T12 (dorsal superior)", size=11, color=t.TEXT_MUTED, weight=ft.FontWeight.W_600),
-                                        ft.Row([
-                                            ft.Text("Pitch", size=11, color=t.TEXT_LIGHT),
-                                            ft.Text(ref=t12_pitch_ref, value="—", size=16, weight=ft.FontWeight.W_700, color=t.TEXT_DARK),
-                                        ], spacing=6),
-                                        ft.Row([
-                                            ft.Text("Roll", size=11, color=t.TEXT_LIGHT),
-                                            ft.Text(ref=t12_roll_ref, value="—", size=16, weight=ft.FontWeight.W_700, color=t.TEXT_DARK),
-                                        ], spacing=6),
-                                    ],
-                                    spacing=4, expand=True,
-                                ),
-                                ft.Column(
-                                    [
-                                        ft.Text("T1 (dorsal medio)", size=11, color=t.TEXT_MUTED, weight=ft.FontWeight.W_600),
-                                        ft.Row([
-                                            ft.Text("Pitch", size=11, color=t.TEXT_LIGHT),
-                                            ft.Text(ref=t1_pitch_ref, value="—", size=16, weight=ft.FontWeight.W_700, color=t.TEXT_DARK),
-                                        ], spacing=6),
-                                        ft.Row([
-                                            ft.Text("Roll", size=11, color=t.TEXT_LIGHT),
-                                            ft.Text(ref=t1_roll_ref, value="—", size=16, weight=ft.FontWeight.W_700, color=t.TEXT_DARK),
-                                        ], spacing=6),
-                                    ],
-                                    spacing=4, expand=True,
-                                ),
-                            ],
                         ),
                     ],
                     spacing=0,

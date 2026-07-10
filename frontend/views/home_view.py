@@ -49,6 +49,13 @@ def home_view(page: ft.Page) -> ft.View:
     )
 
     def _build_tab(index: int):
+        # Si el sheet de dispositivo (Resumen) había quedado abierto, cerrarlo
+        # antes de cambiar de tab — vive en page.overlay, que es global, así
+        # que si no se cierra queda flotando arriba de la tab nueva.
+        old_sheet = getattr(page, "_device_sheet", None)
+        if old_sheet is not None and old_sheet.open:
+            old_sheet.open = False
+
         view = _TABS[index](page)
         current_view[0] = view
         content.content = view

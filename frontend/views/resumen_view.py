@@ -1,6 +1,8 @@
 """Tab 0 — Resumen: dashboard del día."""
 
 from __future__ import annotations
+import threading
+import time
 import flet as ft
 import theme as t
 from .components import card, card_label, dot, pill, divider, section_header
@@ -93,6 +95,7 @@ def _build_device_sheet(page: ft.Page, device_name_text: ft.Text, card_name_text
         color=t.GOOD if is_connected else t.BAD,
         weight=ft.FontWeight.W_500,
     )
+    conn_dot_ref = ft.Ref[ft.Icon]()
 
     # def connect_esp(_):
     #     ip = ip_field.value.strip()
@@ -119,19 +122,25 @@ def _build_device_sheet(page: ft.Page, device_name_text: ft.Text, card_name_text
         def _on_connected():
             conn_status_text.value = "Conectado"
             conn_status_text.color = t.GOOD
+            if conn_dot_ref.current:
+                conn_dot_ref.current.color = t.GOOD
             status_text.value = "Conectado"
             status_text.color = t.GOOD
             if status_dot_ref.current:
                 status_dot_ref.current.bgcolor = t.GOOD
+            _set_connected_ui(True)
             page.update()
 
         def _on_disconnected():
             conn_status_text.value = "Desconectado"
             conn_status_text.color = t.BAD
+            if conn_dot_ref.current:
+                conn_dot_ref.current.color = t.BAD
             status_text.value = "Desconectado"
             status_text.color = t.BAD
             if status_dot_ref.current:
                 status_dot_ref.current.bgcolor = t.BAD
+            _set_connected_ui(False)
             page.update()
 
         # Sacar listeners viejos de esta misma hoja antes de registrar de nuevo
@@ -188,6 +197,40 @@ def _build_device_sheet(page: ft.Page, device_name_text: ft.Text, card_name_text
         size=13, color=t.TEXT_DARK, weight=ft.FontWeight.W_700,
     )
 
+    # ── Mensajes inline dentro del sheet ──────────────────────────────────────
+    # page.snack_bar / show_snack (page.overlay) quedan TAPADOS por este mismo
+    # BottomSheet — un modal siempre se pinta por encima del snackbar de la
+    # página de atrás, no importa el orden en que se agreguen los controles.
+    # En vez de un banner único arriba, cada aviso vive pegado a la acción que
+    # lo dispara: el de vibración al lado del título "Duración de la
+    # vibración", el de calibración debajo de "Calibrar equipo", el de
+    # apagado debajo de "Apagar dispositivo".
+    vib_msg_text   = ft.Text("", size=11, weight=ft.FontWeight.W_600, visible=False)
+    calib_msg_text = ft.Text("", size=11, weight=ft.FontWeight.W_600, visible=False)
+    power_msg_text = ft.Text("", size=11, weight=ft.FontWeight.W_600, visible=False)
+
+    def _set_msg(ctrl: ft.Text, msg: str, color: str, duration: float = 3.5):
+        ctrl.value = msg
+        ctrl.color = color
+        ctrl.visible = True
+        page.update()
+
+        # Auto-ocultar después de `duration` segundos — antes quedaba pegado
+        # para siempre porque nada volvía a poner visible=False.
+        token = object()
+        ctrl.data = token  # marca "este es el mensaje más reciente de este control"
+
+        def _clear():
+            time.sleep(duration)
+            if ctrl.data is token:  # nadie puso un mensaje más nuevo mientras tanto
+                ctrl.visible = False
+                try:
+                    page.update()
+                except Exception:
+                    pass
+
+        threading.Thread(target=_clear, daemon=True).start()
+
     def apply_duration(_):
         dur = _snap(float(haptic_slider.value))
         try:
@@ -196,46 +239,118 @@ def _build_device_sheet(page: ft.Page, device_name_text: ft.Text, card_name_text
             pass
         if ws and ws.connected:
             ws.set_config(haptic_intensity=dur)
-        page.snack_bar = ft.SnackBar(
-            ft.Text("Duración guardada en el dispositivo", color=t.CARD),
-            bgcolor=t.TEAL,
-        )
-        page.snack_bar.open = True
-        page.update()
+        _set_msg(vib_msg_text, "Duración guardada", t.TEAL)
 
     def test_vibration(_):
         if ws and ws.connected:
-            ws.test_vibration(_snap(float(haptic_slider.value)))
-            page.snack_bar = ft.SnackBar(
-                ft.Text("Probando vibración…", color=t.CARD), bgcolor=t.NAVY)
-            page.snack_bar.open = True
-            page.update()
+            dur_ms = _snap(float(haptic_slider.value))
+            ws.test_vibration(dur_ms)
+            # El mensaje dura lo mismo que la vibración real (+ un margen chico
+            # para que no se corte justo cuando termina de vibrar).
+            _set_msg(vib_msg_text, "Probando vibración…", t.NAVY, duration=dur_ms / 1000 + 0.3)
 
     def calibrate(_):
-        # OJO: la calibración real del ESP requiere DOS pulsaciones (o dos
-        # llamadas a este comando) separadas por al menos 5s — la primera
-        # arranca, la segunda confirma y recién ahí el firmware guarda y
-        # reporta "calibrated": true en su próximo mensaje de status. Por eso
-        # NO marcamos calibrated=True acá: eso se hace en el listener de
-        # "status" (ver más abajo, _on_ws_status), que refleja el estado real
-        # que reporta el dispositivo.
+        # El firmware (desde la versión con buzzer) solo necesita UN llamado
+        # a "calibrate": arranca la calibración y se autocompleta sola a los
+        # 5s, sin pedir un segundo toque/comando. No marcamos calibrated=True
+        # acá igual, porque el guardado real lo hace el ESP recién cuando
+        # terminan esos 5s — eso se refleja en el listener de "status" (ver
+        # más abajo, _on_ws_status), que espera la confirmación real del
+        # dispositivo en vez de asumirla al tocar el botón.
         if ws and ws.connected:
             ws.calibrate()
-            page.snack_bar = ft.SnackBar(
-                ft.Text("Mantené la postura. Repetí \"Calibrar\" en 5s para confirmar.", color=t.CARD),
-                bgcolor=t.TEAL,
-            )
+            # El firmware ya no pide un segundo toque: con uno solo arranca y
+            # se completa sola a los 5s (el buzzer del dispositivo avisa
+            # cuando termina) — este mensaje solo tiene que avisar que no hay
+            # que tocar nada más mientras tanto.
+            _set_msg(calib_msg_text, "Calibrando… mantené la postura 5s (el dispositivo avisa con un sonido al terminar).", t.TEAL, duration=6.0)
         else:
-            page.snack_bar = ft.SnackBar(
-                ft.Text("Conectá el dispositivo antes de calibrar", color=t.CARD), bgcolor=t.BAD)
-        page.snack_bar.open = True
-        page.update()
+            _set_msg(calib_msg_text, "Conectá el dispositivo antes de calibrar", t.BAD)
 
     def toggle_power(_):
-        page.snack_bar = ft.SnackBar(
-            ft.Text("Comando enviado al dispositivo", color=t.CARD), bgcolor=t.NAVY)
-        page.snack_bar.open = True
-        page.update()
+        _set_msg(power_msg_text, "Comando enviado al dispositivo", t.NAVY)
+
+    # ── Controles cuyo estado (habilitado/deshabilitado, colores) depende de
+    # is_connected — antes se calculaba UNA sola vez al abrir la hoja y nunca
+    # se actualizaba si te conectabas con la hoja ya abierta. Ahora quedan
+    # como variables para poder tocarlos desde _set_connected_ui().
+    test_btn = ft.OutlinedButton(
+        "Probar",
+        icon=ft.icons.VIBRATION,
+        on_click=test_vibration,
+        disabled=not is_connected,
+        style=ft.ButtonStyle(
+            color=t.TEAL if is_connected else t.TEXT_LIGHT,
+            side=ft.BorderSide(1, t.TEAL if is_connected else t.DIVIDER),
+            shape=ft.RoundedRectangleBorder(radius=8),
+        ),
+        expand=True,
+    )
+    apply_btn = ft.FilledButton(
+        "Aplicar",
+        icon=ft.icons.CHECK,
+        on_click=apply_duration,
+        disabled=not is_connected,
+        style=ft.ButtonStyle(
+            bgcolor=t.NAVY if is_connected else t.DIVIDER,
+            color=t.CARD,
+        ),
+        expand=True,
+    )
+    calibrate_btn = ft.FilledButton(
+        "Calibrar equipo",
+        icon=ft.icons.TUNE,
+        on_click=calibrate,
+        disabled=not is_connected,
+        style=ft.ButtonStyle(
+            bgcolor=t.TEAL if is_connected else t.DIVIDER,
+            color=t.CARD,
+        ),
+        width=float("inf"),
+    )
+    power_icon = ft.Icon(ft.icons.POWER_SETTINGS_NEW,
+                         color=t.BAD if is_connected else t.TEXT_LIGHT, size=18)
+    power_label = ft.Text("Apagar dispositivo", size=14,
+                          color=t.BAD if is_connected else t.TEXT_LIGHT,
+                          weight=ft.FontWeight.W_500)
+    power_btn = ft.OutlinedButton(
+        content=ft.Row([power_icon, power_label], spacing=8, alignment=ft.MainAxisAlignment.CENTER),
+        on_click=toggle_power,
+        disabled=not is_connected,
+        style=ft.ButtonStyle(
+            side=ft.BorderSide(1, t.BAD if is_connected else t.DIVIDER),
+            shape=ft.RoundedRectangleBorder(radius=8),
+        ),
+        width=float("inf"),
+    )
+
+    def _set_connected_ui(connected: bool):
+        """Habilita/deshabilita y recolorea todos los controles que dependen
+        de si el ESP está conectado. Se llama desde _on_connected/_on_disconnected
+        para que no haga falta cerrar y reabrir la hoja para verlos reaccionar."""
+        haptic_slider.disabled = not connected
+        haptic_slider.active_color = t.TEAL if connected else t.TEAL_SOFT
+
+        test_btn.disabled = not connected
+        test_btn.style = ft.ButtonStyle(
+            color=t.TEAL if connected else t.TEXT_LIGHT,
+            side=ft.BorderSide(1, t.TEAL if connected else t.DIVIDER),
+            shape=ft.RoundedRectangleBorder(radius=8),
+        )
+
+        apply_btn.disabled = not connected
+        apply_btn.style = ft.ButtonStyle(bgcolor=t.NAVY if connected else t.DIVIDER, color=t.CARD)
+
+        calibrate_btn.disabled = not connected
+        calibrate_btn.style = ft.ButtonStyle(bgcolor=t.TEAL if connected else t.DIVIDER, color=t.CARD)
+
+        power_btn.disabled = not connected
+        power_btn.style = ft.ButtonStyle(
+            side=ft.BorderSide(1, t.BAD if connected else t.DIVIDER),
+            shape=ft.RoundedRectangleBorder(radius=8),
+        )
+        power_icon.color = t.BAD if connected else t.TEXT_LIGHT
+        power_label.color = t.BAD if connected else t.TEXT_LIGHT
 
     sheet = ft.BottomSheet(
         enable_drag=True,
@@ -292,7 +407,7 @@ def _build_device_sheet(page: ft.Page, device_name_text: ft.Text, card_name_text
                         vertical_alignment=ft.CrossAxisAlignment.CENTER,
                     ),
                     ft.Row(
-                        [ft.Icon(ft.icons.CIRCLE, size=10,
+                        [ft.Icon(ft.icons.CIRCLE, ref=conn_dot_ref, size=10,
                                  color=t.GOOD if is_connected else t.BAD),
                          conn_status_text],
                         spacing=6,
@@ -301,7 +416,14 @@ def _build_device_sheet(page: ft.Page, device_name_text: ft.Text, card_name_text
                     divider(),
 
                     # ── Duración de vibración ─────────────────────────────────
-                    ft.Text("Duración de la vibración", size=12, color=t.TEXT_MUTED, weight=ft.FontWeight.W_600),
+                    ft.Row(
+                        [
+                            ft.Text("Duración de la vibración", size=12, color=t.TEXT_MUTED, weight=ft.FontWeight.W_600),
+                            vib_msg_text,
+                        ],
+                        alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
+                        vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                    ),
                     ft.Row(
                         [
                             ft.Text("−", size=20, color=t.TEXT_MUTED, weight=ft.FontWeight.W_300),
@@ -312,31 +434,7 @@ def _build_device_sheet(page: ft.Page, device_name_text: ft.Text, card_name_text
                         vertical_alignment=ft.CrossAxisAlignment.CENTER,
                     ),
                     ft.Row(
-                        [
-                            ft.OutlinedButton(
-                                "Probar",
-                                icon=ft.icons.VIBRATION,
-                                on_click=test_vibration,
-                                disabled=not is_connected,
-                                style=ft.ButtonStyle(
-                                    color=t.TEAL if is_connected else t.TEXT_LIGHT,
-                                    side=ft.BorderSide(1, t.TEAL if is_connected else t.DIVIDER),
-                                    shape=ft.RoundedRectangleBorder(radius=8),
-                                ),
-                                expand=True,
-                            ),
-                            ft.FilledButton(
-                                "Aplicar",
-                                icon=ft.icons.CHECK,
-                                on_click=apply_duration,
-                                disabled=not is_connected,
-                                style=ft.ButtonStyle(
-                                    bgcolor=t.NAVY if is_connected else t.DIVIDER,
-                                    color=t.CARD,
-                                ),
-                                expand=True,
-                            ),
-                        ],
+                        [test_btn, apply_btn],
                         spacing=8,
                     ),
 
@@ -344,38 +442,11 @@ def _build_device_sheet(page: ft.Page, device_name_text: ft.Text, card_name_text
 
                     # ── Controles del equipo ───────────────────────────────────
                     ft.Text("Controles", size=12, color=t.TEXT_MUTED, weight=ft.FontWeight.W_600),
-                    ft.FilledButton(
-                        "Calibrar equipo",
-                        icon=ft.icons.TUNE,
-                        on_click=calibrate,
-                        disabled=not is_connected,
-                        style=ft.ButtonStyle(
-                            bgcolor=t.TEAL if is_connected else t.DIVIDER,
-                            color=t.CARD,
-                        ),
-                        width=float("inf"),
-                    ),
+                    calibrate_btn,
+                    calib_msg_text,
                     ft.Container(height=2),
-                    ft.OutlinedButton(
-                        content=ft.Row(
-                            [
-                                ft.Icon(ft.icons.POWER_SETTINGS_NEW,
-                                        color=t.BAD if is_connected else t.TEXT_LIGHT, size=18),
-                                ft.Text("Apagar dispositivo", size=14,
-                                        color=t.BAD if is_connected else t.TEXT_LIGHT,
-                                        weight=ft.FontWeight.W_500),
-                            ],
-                            spacing=8,
-                            alignment=ft.MainAxisAlignment.CENTER,
-                        ),
-                        on_click=toggle_power,
-                        disabled=not is_connected,
-                        style=ft.ButtonStyle(
-                            side=ft.BorderSide(1, t.BAD if is_connected else t.DIVIDER),
-                            shape=ft.RoundedRectangleBorder(radius=8),
-                        ),
-                        width=float("inf"),
-                    ),
+                    power_btn,
+                    power_msg_text,
                 ],
                 spacing=14,
                 scroll=ft.ScrollMode.AUTO,
@@ -579,8 +650,16 @@ def _legend_row(color: str, label: str, value: str) -> ft.Control:
 
 
 def _fmt_min(m: float) -> str:
-    m = int(m)
-    return f"{m // 60}h {m % 60:02d}m" if m >= 60 else f"{m}m"
+    """m viene en minutos (float). Siempre muestra minutos + segundos con
+    1 decimal (ej. "3m 54.2s"), salvo que pase la hora, donde vuelve al
+    formato "Xh YYm" (los segundos ya no aportan nada a esa escala)."""
+    total_sec = m * 60
+    if total_sec >= 3600:
+        mins = int(m)
+        return f"{mins // 60}h {mins % 60:02d}m"
+    mins = int(total_sec // 60)
+    secs = total_sec - mins * 60
+    return f"{mins}m {secs:.1f}s"
 
 
 def _daily_summary_card(min_buena: float, min_mala: float) -> ft.Control:
@@ -671,6 +750,16 @@ def resumen_view(page: ft.Page) -> ft.Control:
 
     device_sheet = _build_device_sheet(page, sheet_name_text, card_name_text,
                                        haptic_init=dev["haptic"], battery_pct=dev["battery"])
+    # Sacar el sheet de una visita anterior a esta tab antes de agregar el
+    # nuevo — si no, page.overlay va acumulando uno por cada vez que se entra
+    # a Resumen, y alguno puede quedar "open" y aparecer flotando sobre otra
+    # tab al navegar (el overlay es global, no se cierra solo al cambiar de tab).
+    old_sheet = getattr(page, "_device_sheet", None)
+    if old_sheet is not None:
+        old_sheet.open = False
+        if old_sheet in page.overlay:
+            page.overlay.remove(old_sheet)
+    page._device_sheet = device_sheet
     page.overlay.append(device_sheet)
 
     # ── Escuchar "status" del ESP para reflejar la calibración REAL ──────────
@@ -705,7 +794,6 @@ def resumen_view(page: ft.Page) -> ft.Control:
         ws.add_listener("status", _on_ws_status, owner="resumen_status")
 
     def open_device_sheet(_):
-        print("[SHEET] tocaron la tarjeta")
         device_sheet.open = True
         page.update()
 

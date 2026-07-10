@@ -4,6 +4,7 @@ from __future__ import annotations
 import threading
 import flet as ft
 import theme as t
+from ws_client import ALINAWebSocket
 
 from .resumen_view   import resumen_view
 from .en_vivo_view   import en_vivo_view
@@ -22,12 +23,21 @@ _TABS = [
 ]
 
 # Tabs que tienen refresh automático (índices)
-_REFRESHABLE_TABS = {0, 1, 3}  # Resumen, En vivo, Análisis
+_REFRESHABLE_TABS = {0, 1}  # Resumen, En vivo (Análisis sigue siendo placeholder)
 _REFRESH_INTERVAL = 3  # segundos
 
 
 def home_view(page: ft.Page) -> ft.View:
     page.bgcolor = t.BG
+
+    # ── WebSocket compartido — se crea UNA sola vez acá, así siempre existe
+    # cuando cualquier tab se construye (antes se creaba recién al tocar
+    # "Conectar" desde Resumen, y para ese entonces home_view ya había
+    # intentado registrar sus listeners sobre un ws_client que todavía
+    # no existía — se perdían para siempre). connect() no se llama todavía,
+    # solo instanciamos el cliente.
+    if not hasattr(page, "ws_client") or page.ws_client is None:
+        page.ws_client = ALINAWebSocket()
 
     current_tab = [0]
     current_view = [None]  # Control activo con método refresh()
@@ -43,25 +53,33 @@ def home_view(page: ft.Page) -> ft.View:
         current_view[0] = view
         content.content = view
 
-        # Registrar callbacks del WS en resumen y en_vivo
-        ws = getattr(page, "ws_client", None)
-        resumen = current_view[0] if index == 0 else getattr(page, "_resumen_ctrl", None)
+        ws = page.ws_client
 
         if index == 0:
             page._resumen_ctrl = view  # guardar ref global al resumen
-            if ws:
-                def _ws_connect():
-                    if hasattr(page, "_resumen_ctrl") and hasattr(page._resumen_ctrl, "on_device_change"):
-                        page._resumen_ctrl.on_device_change(connected=True)
-                def _ws_disconnect():
-                    if hasattr(page, "_resumen_ctrl") and hasattr(page._resumen_ctrl, "on_device_change"):
-                        page._resumen_ctrl.on_device_change(connected=False)
-                ws.on_connect    = _ws_connect
-                ws.on_disconnect = _ws_disconnect
+
+            # Sacar los listeners que había dejado esta misma tab la vez
+            # anterior, para no ir acumulando duplicados.
+            ws.clear_listeners("home_resumen")
+
+            def _ws_connect():
+                if hasattr(page, "_resumen_ctrl") and hasattr(page._resumen_ctrl, "on_device_change"):
+                    page._resumen_ctrl.on_device_change(connected=True)
+
+            def _ws_disconnect():
+                if hasattr(page, "_resumen_ctrl") and hasattr(page._resumen_ctrl, "on_device_change"):
+                    page._resumen_ctrl.on_device_change(connected=False)
+
+            ws.add_listener("connect",    _ws_connect,    owner="home_resumen")
+            ws.add_listener("disconnect", _ws_disconnect, owner="home_resumen")
+
+            # Si ya estaba conectado de antes (volviste a esta tab), reflejarlo
+            # ya mismo en vez de esperar al próximo evento o al polling.
+            if ws.connected:
+                _ws_connect()
 
         if index == 2:
             page._historial_ctrl = view  # guardar ref global al historial
-
 
         if index == 1:
             # En vivo notifica al resumen e historial cuando guarda una sesión
@@ -79,16 +97,6 @@ def home_view(page: ft.Page) -> ft.View:
                     page._resumen_ctrl.on_alert_received()
             if hasattr(view, "on_alert_relay"):
                 view.on_alert_relay = _notify_alert
-                
-        # if index == 1:
-        #     # En vivo notifica al resumen e historial cuando guarda una sesión
-        #     def _notify_all():
-        #         if hasattr(page, "_resumen_ctrl") and hasattr(page._resumen_ctrl, "on_session_saved"):
-        #             page._resumen_ctrl.on_session_saved()
-        #         if hasattr(page, "_historial_ctrl") and hasattr(page._historial_ctrl, "refresh"):
-        #             page._historial_ctrl.refresh()
-        #     if hasattr(view, "on_session_saved"):
-        #         view.on_session_saved = _notify_all
 
         page.update()
 

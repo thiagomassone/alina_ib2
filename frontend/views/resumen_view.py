@@ -112,24 +112,35 @@ def _build_device_sheet(page: ft.Page, device_name_text: ft.Text, card_name_text
         if not ip:
             return
         page.esp_ip = ip
-        from ws_client import ALINAWebSocket
-        if not hasattr(page, "ws_client") or page.ws_client is None:
-            page.ws_client = ALINAWebSocket()
+        # page.ws_client ya existe siempre (lo crea home_view al arrancar la app) —
+        # acá solo lo conectamos, no lo recreamos.
+        ws_local = page.ws_client
 
         def _on_connected():
             conn_status_text.value = "Conectado"
             conn_status_text.color = t.GOOD
+            status_text.value = "Conectado"
+            status_text.color = t.GOOD
+            if status_dot_ref.current:
+                status_dot_ref.current.bgcolor = t.GOOD
             page.update()
 
         def _on_disconnected():
             conn_status_text.value = "Desconectado"
             conn_status_text.color = t.BAD
+            status_text.value = "Desconectado"
+            status_text.color = t.BAD
+            if status_dot_ref.current:
+                status_dot_ref.current.bgcolor = t.BAD
             page.update()
 
-        page.ws_client.on_connect = _on_connected
-        page.ws_client.on_disconnect = _on_disconnected
+        # Sacar listeners viejos de esta misma hoja antes de registrar de nuevo
+        # (evita acumular duplicados si tocás "Conectar" más de una vez).
+        ws_local.clear_listeners("resumen_sheet_conn")
+        ws_local.add_listener("connect",    _on_connected,    owner="resumen_sheet_conn")
+        ws_local.add_listener("disconnect", _on_disconnected, owner="resumen_sheet_conn")
 
-        page.ws_client.connect(ip)
+        ws_local.connect(ip)
         conn_status_text.value = "Conectando..."
         conn_status_text.color = t.NEUTRAL
         page.update()
@@ -171,6 +182,7 @@ def _build_device_sheet(page: ft.Page, device_name_text: ft.Text, card_name_text
         color=t.GOOD if is_connected else t.BAD,
         weight=ft.FontWeight.W_500,
     )
+    status_dot_ref = ft.Ref[ft.Container]()
     battery_text = ft.Text(
         f"{battery_pct}%" if battery_pct is not None else "—",
         size=13, color=t.TEXT_DARK, weight=ft.FontWeight.W_700,
@@ -200,16 +212,22 @@ def _build_device_sheet(page: ft.Page, device_name_text: ft.Text, card_name_text
             page.update()
 
     def calibrate(_):
-        from datetime import datetime
-        ts = datetime.now().isoformat(timespec="seconds")
-        try:
-            page.api.update_device_status(last_calibration_at=ts, calibrated=True)
-        except Exception:
-            pass
+        # OJO: la calibración real del ESP requiere DOS pulsaciones (o dos
+        # llamadas a este comando) separadas por al menos 5s — la primera
+        # arranca, la segunda confirma y recién ahí el firmware guarda y
+        # reporta "calibrated": true en su próximo mensaje de status. Por eso
+        # NO marcamos calibrated=True acá: eso se hace en el listener de
+        # "status" (ver más abajo, _on_ws_status), que refleja el estado real
+        # que reporta el dispositivo.
         if ws and ws.connected:
             ws.calibrate()
-        page.snack_bar = ft.SnackBar(
-            ft.Text("Calibración iniciada", color=t.CARD), bgcolor=t.TEAL)
+            page.snack_bar = ft.SnackBar(
+                ft.Text("Mantené la postura. Repetí \"Calibrar\" en 5s para confirmar.", color=t.CARD),
+                bgcolor=t.TEAL,
+            )
+        else:
+            page.snack_bar = ft.SnackBar(
+                ft.Text("Conectá el dispositivo antes de calibrar", color=t.CARD), bgcolor=t.BAD)
         page.snack_bar.open = True
         page.update()
 
@@ -242,7 +260,11 @@ def _build_device_sheet(page: ft.Page, device_name_text: ft.Text, card_name_text
                                         vertical_alignment=ft.CrossAxisAlignment.CENTER,
                                         spacing=2,
                                     ),
-                                    ft.Row([dot(t.GOOD, 8), status_text], spacing=6),
+                                    ft.Row([
+                                        ft.Container(ref=status_dot_ref, width=8, height=8, border_radius=8,
+                                                     bgcolor=t.GOOD if is_connected else t.BAD),
+                                        status_text,
+                                    ], spacing=6),
                                 ],
                                 spacing=2, expand=True,
                             ),
@@ -583,18 +605,23 @@ def resumen_view(page: ft.Page) -> ft.Control:
 
     # ── Cargar datos iniciales ────────────────────────────────────────────────
     def _load_device():
+        # El estado de conexión es del WebSocket (en memoria) y NO depende de
+        # si el backend responde — antes, si get_device_status() fallaba por
+        # lo que sea, esto forzaba "connected": False aunque el ESP estuviera
+        # conectado. Ahora se calcula siempre, incluso si el resto falla.
+        ws = getattr(page, "ws_client", None)
+        connected = ws is not None and ws.connected
         try:
             ds = page.api.get_device_status()
-            ws = getattr(page, "ws_client", None)
             return {
                 "name":      ds.get("device_name", "ALINA Dispositivo"),
                 "battery":   ds.get("battery_pct"),
                 "haptic":    ds.get("haptic_intensity", 60),
                 "calibrated":ds.get("calibrated", False),
-                "connected": ws is not None and ws.connected,
+                "connected": connected,
             }
         except Exception:
-            return {"name": "ALINA Dispositivo", "battery": None, "haptic": 60, "calibrated": False, "connected": False}
+            return {"name": "ALINA Dispositivo", "battery": None, "haptic": 60, "calibrated": False, "connected": connected}
 
     def _load_score():
         try:
@@ -645,6 +672,37 @@ def resumen_view(page: ft.Page) -> ft.Control:
     device_sheet = _build_device_sheet(page, sheet_name_text, card_name_text,
                                        haptic_init=dev["haptic"], battery_pct=dev["battery"])
     page.overlay.append(device_sheet)
+
+    # ── Escuchar "status" del ESP para reflejar la calibración REAL ──────────
+    # (el firmware manda "calibrated": true/false en cada status; acá lo
+    # persistimos en el backend en vez de asumirlo al tocar el botón).
+    ws = getattr(page, "ws_client", None)
+    if ws:
+        ws.clear_listeners("resumen_status")
+
+        def _on_ws_status(data: dict):
+            from datetime import datetime
+            cal = bool(data.get("calibrated", False))
+            try:
+                payload = {"calibrated": cal}
+                if cal:
+                    payload["last_calibration_at"] = datetime.now().isoformat(timespec="seconds")
+                page.api.update_device_status(**payload)
+            except Exception:
+                pass
+            device_card_ref.current.content = _device_card(
+                on_tap=open_device_sheet,
+                name_text=ft.Text(card_name_text.value, size=14, weight=ft.FontWeight.W_600, color=t.TEXT_DARK),
+                battery_pct=dev.get("battery"),
+                calibrated=cal,
+                connected=ws.connected,
+            )
+            try:
+                page.update()
+            except Exception:
+                pass
+
+        ws.add_listener("status", _on_ws_status, owner="resumen_status")
 
     def open_device_sheet(_):
         print("[SHEET] tocaron la tarjeta")

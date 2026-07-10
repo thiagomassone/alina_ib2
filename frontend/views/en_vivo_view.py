@@ -95,6 +95,14 @@ def en_vivo_view(page: ft.Page) -> ft.Control:
     status_text = ft.Text("Sin sesión activa", size=13, color=t.TEXT_MUTED)
     conn_status = ft.Text("Desconectado", size=13, color=t.TEXT_MUTED)
 
+    # Ángulos en vivo (pitch/roll de T1 y T12) — se actualizan en _on_posture.
+    # Solo llegan datos mientras hay una sesión de monitoreo activa (así lo
+    # manda el firmware), por eso arrancan en "—" hasta el primer mensaje.
+    t1_pitch_ref  = ft.Ref[ft.Text]()
+    t1_roll_ref   = ft.Ref[ft.Text]()
+    t12_pitch_ref = ft.Ref[ft.Text]()
+    t12_roll_ref  = ft.Ref[ft.Text]()
+
     start_btn = ft.FilledButton(
         "Iniciar sesión", icon=ft.icons.PLAY_ARROW,
         style=ft.ButtonStyle(bgcolor=t.TEAL, color=t.CARD), expand=True,
@@ -219,15 +227,23 @@ def en_vivo_view(page: ft.Page) -> ft.Control:
 
     def _on_posture(data: dict):
         print(f"[POSTURE] {data}")   # ← temporal
+        t1p, t1r   = data.get("t1_pitch", 0),  data.get("t1_roll", 0)
+        t12p, t12r = data.get("t12_pitch", 0), data.get("t12_roll", 0)
         # Calcular si cada zona está en mala postura
-        postura_mala["t1"]  = _es_mala_t1(data.get("t1_pitch", 0),  data.get("t1_roll", 0))
-        postura_mala["t12"] = _es_mala_t12(data.get("t12_pitch", 0), data.get("t12_roll", 0))
+        postura_mala["t1"]  = _es_mala_t1(t1p, t1r)
+        postura_mala["t12"] = _es_mala_t12(t12p, t12r)
         # Alternar el flag de pulso: cada mensaje lo da vuelta → genera el latido
         pulso_flag["on"] = not pulso_flag["on"]
         # Redibujar el muñequito con los nuevos tamaños
         if back_img_ref.current:
             new_img = _back_svg_widget(imu_states, postura_mala, pulso_flag["on"])
             back_img_ref.current.src_base64 = new_img.src_base64
+        # Actualizar los números de ángulo en vivo
+        if t1_pitch_ref.current:
+            t1_pitch_ref.current.value  = f"{t1p:+.1f}°"
+            t1_roll_ref.current.value   = f"{t1r:+.1f}°"
+            t12_pitch_ref.current.value = f"{t12p:+.1f}°"
+            t12_roll_ref.current.value  = f"{t12r:+.1f}°"
         try: page.update()
         except: pass
 
@@ -276,15 +292,17 @@ def en_vivo_view(page: ft.Page) -> ft.Control:
         except Exception:
             pass
 
-    # Registrar callbacks si hay ws_client en page
+    # Registrar callbacks si hay ws_client en page — vía multi-listener, así
+    # no se pisan con lo que registran Resumen/Home para los mismos eventos.
     if ws:
-        ws.on_connect        = _on_ws_connect
-        ws.on_disconnect     = _on_ws_disconnect
-        ws.on_status         = _on_status
-        ws.on_posture        = _on_posture
-        ws.on_alert          = _on_alert
-        ws.on_session_end    = _on_session_end
-        ws.on_session_status = _on_session_status
+        ws.clear_listeners("en_vivo")
+        ws.add_listener("connect",        _on_ws_connect,     owner="en_vivo")
+        ws.add_listener("disconnect",     _on_ws_disconnect,  owner="en_vivo")
+        ws.add_listener("status",         _on_status,         owner="en_vivo")
+        ws.add_listener("posture",        _on_posture,        owner="en_vivo")
+        ws.add_listener("alert",          _on_alert,          owner="en_vivo")
+        ws.add_listener("session_end",    _on_session_end,    owner="en_vivo")
+        ws.add_listener("session_status", _on_session_status, owner="en_vivo")
         if ws.connected:
             conn_status.value = "Conectado"
             conn_status.color = t.GOOD
@@ -473,26 +491,18 @@ def en_vivo_view(page: ft.Page) -> ft.Control:
         threading.Thread(target=_tick, daemon=True).start()
 
     def refresh():
-        """Llamado por el timer global — re-registra callbacks del WS si cambió."""
+        """Llamado por el timer global. Con el multi-listener de ws_client ya
+        no hace falta re-registrar los callbacks acá (nadie nos los pisa
+        mientras estamos en esta tab) — solo refrescamos el estado de
+        conexión mostrado, por si cambió."""
         ws = getattr(page, "ws_client", None)
         if ws:
-            ws.on_connect        = _on_ws_connect
-            ws.on_disconnect     = _on_ws_disconnect
-            ws.on_status         = _on_status
-            ws.on_posture        = _on_posture
-            ws.on_alert          = _on_alert
-            ws.on_session_end    = _on_session_end
-            ws.on_session_status = _on_session_status
-            # Actualizar estado de conexión
             if ws.connected:
                 conn_status.value = "Conectado"
                 conn_status.color = t.GOOD
             else:
                 conn_status.value = "Desconectado"
                 conn_status.color = t.BAD
-            # Si hay último status, refrescar IMUs
-            if getattr(ws, "last_status", None):
-                _on_status(ws.last_status)
 
     # home_view sobreescribe esto con referencia al resumen
     def on_session_saved():
@@ -534,6 +544,50 @@ def en_vivo_view(page: ft.Page) -> ft.Control:
                             ],
                             vertical_alignment=ft.CrossAxisAlignment.CENTER,
                             spacing=8,
+                        ),
+                    ],
+                    spacing=0,
+                )
+            ),
+
+            # ── Ángulos en vivo ──────────────────────────────────────────────
+            card(
+                ft.Column(
+                    [
+                        card_label("Ángulos en vivo"),
+                        ft.Text("Se actualizan mientras hay una sesión activa", size=10, color=t.TEXT_LIGHT),
+                        ft.Container(height=8),
+                        ft.Row(
+                            [
+                                ft.Column(
+                                    [
+                                        ft.Text("T12 (dorsal superior)", size=11, color=t.TEXT_MUTED, weight=ft.FontWeight.W_600),
+                                        ft.Row([
+                                            ft.Text("Pitch", size=11, color=t.TEXT_LIGHT),
+                                            ft.Text(ref=t12_pitch_ref, value="—", size=16, weight=ft.FontWeight.W_700, color=t.TEXT_DARK),
+                                        ], spacing=6),
+                                        ft.Row([
+                                            ft.Text("Roll", size=11, color=t.TEXT_LIGHT),
+                                            ft.Text(ref=t12_roll_ref, value="—", size=16, weight=ft.FontWeight.W_700, color=t.TEXT_DARK),
+                                        ], spacing=6),
+                                    ],
+                                    spacing=4, expand=True,
+                                ),
+                                ft.Column(
+                                    [
+                                        ft.Text("T1 (dorsal medio)", size=11, color=t.TEXT_MUTED, weight=ft.FontWeight.W_600),
+                                        ft.Row([
+                                            ft.Text("Pitch", size=11, color=t.TEXT_LIGHT),
+                                            ft.Text(ref=t1_pitch_ref, value="—", size=16, weight=ft.FontWeight.W_700, color=t.TEXT_DARK),
+                                        ], spacing=6),
+                                        ft.Row([
+                                            ft.Text("Roll", size=11, color=t.TEXT_LIGHT),
+                                            ft.Text(ref=t1_roll_ref, value="—", size=16, weight=ft.FontWeight.W_700, color=t.TEXT_DARK),
+                                        ], spacing=6),
+                                    ],
+                                    spacing=4, expand=True,
+                                ),
+                            ],
                         ),
                     ],
                     spacing=0,

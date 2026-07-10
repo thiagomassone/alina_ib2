@@ -79,12 +79,14 @@ class ApiClient:
         )
         r.raise_for_status()
         return r.json()
+
+    def get_preferences(self) -> dict:
         r = httpx.get(
             f"{self.base_url}/preferences/me", headers=self._auth_headers(), timeout=10
         )
         r.raise_for_status()
         return r.json()
-
+    
     # ─── Dispositivo ───
     def get_device_status(self) -> dict:
         """Estado actual del dispositivo (nombre, batería, calibración, intensidad)."""
@@ -127,13 +129,22 @@ class ApiClient:
         return r.json()
 
     # ─── Sesiones ───
-    def create_session(self, started_at: str, duracion_min: float, alertas_hapticas: int) -> dict:
+    def create_session(
+        self,
+        started_at: str,
+        duracion_min: float,
+        alertas_hapticas: int,
+        min_buena: float = 0.0,
+        min_mala: float = 0.0,
+    ) -> dict:
         """Registrar una sesión completada. Llamar al terminar el monitoreo.
 
         Args:
             started_at: ISO 8601, ej. "2024-05-10T14:30:00"
             duracion_min: duración real en minutos
             alertas_hapticas: cantidad de veces que vibró para corregir postura
+            min_buena: minutos en buena postura
+            min_mala: minutos en mala postura
         """
         r = httpx.post(
             f"{self.base_url}/sessions",
@@ -141,6 +152,8 @@ class ApiClient:
                 "started_at": started_at,
                 "duracion_min": duracion_min,
                 "alertas_hapticas": alertas_hapticas,
+                "min_buena": min_buena,
+                "min_mala": min_mala,
             },
             headers=self._auth_headers(),
             timeout=10,

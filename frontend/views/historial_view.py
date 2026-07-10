@@ -7,12 +7,12 @@ import flet as ft
 import theme as t
 from .components import card, card_label, divider, section_header
 
-# ── Mock de fallback ──────────────────────────────────────────────────────────
-_MOCK_SESSIONS = [
-    {"fecha": "Hoy, 14:30",  "duracion": "45 min", "score": 83, "min_buena": 30.0, "min_mala": 15.0, "alertas": 3},
-    {"fecha": "Hoy, 08:15",  "duracion": "60 min", "score": 76, "min_buena": 42.0, "min_mala": 18.0, "alertas": 5},
-    {"fecha": "Ayer, 18:20", "duracion": "35 min", "score": 74, "min_buena": 22.0, "min_mala": 13.0, "alertas": 4},
-]
+# ── Mock de fallback (comentado — decidir para la presentación: mock vs datos reales) ──
+# _MOCK_SESSIONS = [
+#     {"fecha": "Hoy, 14:30",  "duracion": "45 min", "score": 83, "min_buena": 30.0, "min_mala": 15.0, "alertas": 3},
+#     {"fecha": "Hoy, 08:15",  "duracion": "60 min", "score": 76, "min_buena": 42.0, "min_mala": 18.0, "alertas": 5},
+#     {"fecha": "Ayer, 18:20", "duracion": "35 min", "score": 74, "min_buena": 22.0, "min_mala": 13.0, "alertas": 4},
+# ]
 
 
 def _fmt_session(s: dict) -> dict:
@@ -588,7 +588,7 @@ def historial_view(page: ft.Page) -> ft.Control:
 
                         ft.Text(
                             ref=mock_note,
-                            value="* Datos de ejemplo — completá tu primera sesión",
+                            value="Todavía no hay sesiones registradas — iniciá una desde En Vivo",
                             size=10, color=t.TEXT_LIGHT,
                             visible=usando_mock,
                         ),

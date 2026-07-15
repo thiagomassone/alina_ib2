@@ -15,15 +15,20 @@ def _imu_color(status: str) -> str:
     return {"listo": t.GOOD, "calibrar": t.NEUTRAL, "desconectado": t.TEXT_LIGHT}.get(status, t.TEXT_LIGHT)
 
 
-# NOTA: la base (silueta + puntos T1/T12/pelvis) ya NO codifica "mala postura"
-# con color ni tamaño — eso ahora es el aro rojo animado que se superpone
-# encima (ver _pulse_dot en el entry point), con animación nativa de Flet en
-# vez de re-generar la imagen entera. Los puntos acá solo reflejan conexión/
-# calibración (verde=listo, ámbar=pendiente de calibrar, gris=desconectado).
+# El COLOR del punto sale de acá (del SVG), no del overlay:
+#   - verde  = listo        - ámbar = pendiente de calibrar
+#   - gris   = desconectado - rojo  = zona en mala postura
+# Antes el rojo se hacía superponiendo un disco translúcido encima del punto
+# verde, y el resultado era exactamente eso: un punto verde con un círculo
+# rojo semitransparente arriba, nunca un punto rojo. El motivo original para
+# sacar el rojo del SVG era "no regenerar la imagen entera", pero _on_posture
+# YA la regenera a 5 Hz para actualizar los números de ángulo — así que no se
+# ahorraba nada. El overlay ahora es solo el ARO que late (ver _pulse_ring).
 def _back_svg_widget(
     imu_states: dict,
     angles: dict | None = None,
     img_ref: "ft.Ref | None" = None,
+    mala: dict | None = None,
 ) -> ft.Control:
     """angles: {"t1_pitch", "t1_roll", "t12_pitch", "t12_roll"} — si viene None
     (todavía no llegó ningún mensaje de postura) se muestran guiones "-" en
@@ -36,6 +41,12 @@ def _back_svg_widget(
     sup = _imu_color(imu_states.get("dorsal_superior", "desconectado"))
     mid = _imu_color(imu_states.get("dorsal_medio",    "desconectado"))
     pel = _imu_color(imu_states.get("pelvis",           "desconectado"))
+
+    # Mala postura pisa el color de estado, pero solo si el sensor está "listo":
+    # si está desconectado o sin calibrar no hay dato real que justifique el rojo.
+    m = mala or {}
+    if m.get("t1")  and imu_states.get("dorsal_superior") == "listo": sup = t.BAD
+    if m.get("t12") and imu_states.get("dorsal_medio")    == "listo": mid = t.BAD
 
     # Números de pitch/roll al lado de cada círculo — siempre se dibujan;
     # si todavía no llegó postura (angles is None) se muestra "-".
@@ -78,22 +89,37 @@ def _back_svg_widget(
     )
 
 
-def _pulse_dot(cx: int, cy: int, dot_ref: "ft.Ref[ft.Container]") -> ft.Container:
-    """Aro rojo que se superpone a un punto del diagrama cuando hay mala
-    postura. Empieza invisible (opacity=0); un hilo en el entry point lo hace
-    crecer/achicarse con las transiciones nativas de Flet (animate/animate_opacity),
-    que interpolan solas y quedan fluidas sin importar la tasa de refresco de
-    la pantalla — a diferencia de la versión vieja, que reemplazaba toda la
-    imagen 5 veces por segundo y saltaba entre 2 tamaños fijos."""
-    size = 18
+_RING_SIZE = 34   # tamaño FIJO del aro. El latido se hace con scale, no con width.
+
+
+def _pulse_ring(cx: int, cy: int, ring_ref: "ft.Ref[ft.Container]") -> ft.Container:
+    """Aro rojo que late alrededor de un punto del diagrama cuando hay mala
+    postura. Empieza invisible (opacity=0); el hilo de pulso del entry point
+    solo toca `scale` y `opacity`.
+
+    POR QUÉ scale Y NO width/height (esto era el bug del aro bailando):
+      `animate` interpola width/height, pero `left`/`top` son del Positioned
+      del Stack y NO se animan: saltan al valor final al instante. La versión
+      vieja movía las cuatro cosas juntas para "recentrar" el aro al cambiar
+      de tamaño, así que durante los 450ms de transición el left ya estaba en
+      el destino mientras el width todavía viajaba → el centro se corría unos
+      7px. Y como el latido dispara cada 550ms con animaciones de 450ms, nunca
+      terminaba de asentarse: quedaba permanentemente descentrado.
+
+      `scale` transforma alrededor del CENTRO del control, así que left/top se
+      fijan una sola vez acá y no se tocan nunca más. Imposible que se corra.
+    """
+    s = _RING_SIZE
     return ft.Container(
-        ref=dot_ref,
-        left=cx - size / 2, top=cy - size / 2,
-        width=size, height=size,
-        border_radius=size,
-        bgcolor=t.BAD,
+        ref=ring_ref,
+        left=cx - s / 2, top=cy - s / 2,   # se calculan UNA vez y quedan fijos
+        width=s, height=s,
+        border_radius=s,
+        bgcolor=None,                       # sin relleno: el color lo pone el SVG
+        border=ft.border.all(2.5, t.BAD),
         opacity=0,
-        animate=ft.animation.Animation(450, ft.AnimationCurve.EASE_IN_OUT),
+        scale=0.55,
+        animate_scale=ft.animation.Animation(450, ft.AnimationCurve.EASE_IN_OUT),
         animate_opacity=ft.animation.Animation(450, ft.AnimationCurve.EASE_IN_OUT),
     )
 
@@ -202,20 +228,76 @@ def en_vivo_view(page: ft.Page) -> ft.Control:
                 except: break
 
 
+    def _redibujar(angles: dict | None = None):
+        """Regenerar el SVG con el estado actual de imu_states / postura_mala.
+
+        OJO: los puntos son una IMAGEN base64. Tocar imu_states no cambia nada
+        en pantalla hasta que la imagen se vuelve a generar — page.update() no
+        alcanza. Ese era el bug de los puntos verdes con el equipo apagado:
+        _on_ws_disconnect ponía el dict en "desconectado" y actualizaba la
+        página, pero la imagen seguía siendo la misma de antes. Por eso ahora
+        TODOS los caminos que tocan el estado pasan por acá.
+        """
+        if back_img_ref.current:
+            back_img_ref.current.src_base64 = _back_svg_widget(
+                imu_states, angles, mala=postura_mala
+            ).src_base64
+
     # ── WebSocket callbacks ───────────────────────────────────────────────────
     ws = getattr(page, "ws_client", None)
+
+    # Timestamp del último "posture" recibido. Se usa para detectar si el ESP
+    # se reinició mientras estábamos desconectados (ver _resync_sesion).
+    ultimo_posture = [0.0]
+
+    def _resync_sesion():
+        """Al reconectar con una sesión activa: ¿el ESP todavía la tiene?
+
+        Cortar la alimentación con el switch NO es una caída de WiFi: el ESP
+        reinicia y arranca en SESION_IDLE. Y el firmware solo manda posture
+        con `estadoSesion == SESION_RUNNING`, así que en IDLE no manda nada
+        más: la app cree que la sesión sigue y el muñequito se queda mudo.
+
+        No se lo podemos preguntar (wsEnviarStatus no incluye el estado de
+        sesión), así que lo deducimos por SILENCIO: si estuviera corriendo,
+        el posture llega a 5 Hz. Tres segundos sin uno solo ⇒ no está en
+        RUNNING ⇒ se reinició ⇒ le re-mandamos start_session.
+
+        Que sea por silencio y no incondicional es lo que salva los datos:
+        si fue solo un hipo de WiFi, el ESP siguió prendido acumulando
+        alertasHapticas/minBuena/minMala, el posture vuelve al instante y no
+        mandamos nada. Un start_session a ciegas se los borraría todos.
+        """
+        marca = ultimo_posture[0]
+        time.sleep(3)
+        if not page.session_active or page.session_paused:
+            return
+        if ultimo_posture[0] != marca:
+            return   # llegó postura: el ESP siguió vivo, no tocar nada
+        if ws and ws.connected:
+            ws.start_session()
 
     def _on_ws_connect():
         conn_status.value = "Conectado"
         conn_status.color = t.GOOD
         try: page.update()
         except: pass
+        # Solo si NO está pausada: en pausa el ESP tampoco manda posture, así
+        # que el silencio no probaría nada y le estaríamos reiniciando los
+        # contadores de una sesión que está sana.
+        if getattr(page, "session_active", False) and not page.session_paused:
+            threading.Thread(target=_resync_sesion, daemon=True).start()
 
     def _on_ws_disconnect():
         conn_status.value = "Desconectado"
         conn_status.color = t.BAD
-        # Actualizar IMUs a desconectado
-        for k in imu_states: imu_states[k] = "desconectado"
+        for k in imu_states:
+            imu_states[k] = "desconectado"
+        # Sin dispositivo no hay postura que mostrar: apagar los aros (si se
+        # cayó justo con mala postura, el aro seguiría latiendo para siempre
+        # sobre un equipo que no está) y volver los ángulos a "-".
+        postura_mala["t1"] = postura_mala["t12"] = False
+        _redibujar()
         try: page.update()
         except: pass
 
@@ -235,10 +317,7 @@ def en_vivo_view(page: ft.Page) -> ft.Control:
                 if imu_states[k] == "listo":
                     imu_states[k] = "calibrar"
 
-        # Actualizar SVG del IMU
-        if back_img_ref.current:
-            new_img = _back_svg_widget(imu_states)
-            back_img_ref.current.src_base64 = new_img.src_base64
+        _redibujar()
 
         try: page.update()
         except: pass
@@ -260,6 +339,7 @@ def en_vivo_view(page: ft.Page) -> ft.Control:
         # igual que cuando está desconectado.
         if not page.session_active:
             return
+        ultimo_posture[0] = time.time()
         t1p, t1r   = data.get("t1_pitch", 0),  data.get("t1_roll", 0)
         t12p, t12r = data.get("t12_pitch", 0), data.get("t12_roll", 0)
         # Calcular si cada zona está en mala postura — el hilo de pulso (más
@@ -271,37 +351,35 @@ def en_vivo_view(page: ft.Page) -> ft.Control:
         # (esto sí regenera la imagen base, pero ya no incluye el pulso —
         # el pulso es 100% del hilo de abajo, con animación nativa de Flet,
         # así que regenerar la imagen para los números no lo interrumpe).
-        if back_img_ref.current:
-            angles = {"t1_pitch": t1p, "t1_roll": t1r, "t12_pitch": t12p, "t12_roll": t12r}
-            new_img = _back_svg_widget(imu_states, angles)
-            back_img_ref.current.src_base64 = new_img.src_base64
+        _redibujar({"t1_pitch": t1p, "t1_roll": t1r, "t12_pitch": t12p, "t12_roll": t12r})
         try: page.update()
         except: pass
 
     # ── Hilo del latido — anima los aros con transiciones nativas de Flet ────
+    # Cortar el hilo de una visita anterior a esta tab antes de arrancar el
+    # nuevo: cada vez que se reconstruía la vista quedaba un hilo más vivo para
+    # siempre, todos llamando page.update() sobre refs viejos.
+    old_pulse = getattr(page, "_pulse_running", None)
+    if old_pulse is not None:
+        old_pulse[0] = False
     pulse_running = [True]
+    page._pulse_running = pulse_running
 
     def _pulse_loop():
         grown = False
         while pulse_running[0]:
             time.sleep(0.55)
             grown = not grown
-            for zona, ref, (cx, cy) in (
-                ("t1",  t1_pulse_ref,  (100, 88)),
-                ("t12", t12_pulse_ref, (100, 148)),
-            ):
-                dot = ref.current
-                if not dot:
+            for zona, ref in (("t1", t1_pulse_ref), ("t12", t12_pulse_ref)):
+                ring = ref.current
+                if not ring:
                     continue
                 if postura_mala.get(zona):
-                    size = 30 if grown else 16
-                    dot.width = size
-                    dot.height = size
-                    dot.left = cx - size / 2
-                    dot.top = cy - size / 2
-                    dot.opacity = 0.65 if grown else 0.4
+                    # Solo scale y opacity. left/top/width/height NO se tocan.
+                    ring.scale   = 1.0 if grown else 0.55
+                    ring.opacity = 0.9 if grown else 0.5
                 else:
-                    dot.opacity = 0
+                    ring.opacity = 0
             try: page.update()
             except: pass
 
@@ -361,8 +439,13 @@ def en_vivo_view(page: ft.Page) -> ft.Control:
         if ws.connected:
             conn_status.value = "Conectado"
             conn_status.color = t.GOOD
-        if getattr(ws, "last_status", None):
+        # Solo replayar el último status si SEGUIMOS conectados: last_status
+        # queda cacheado para siempre, así que sin este guard, cambiar de tab
+        # con el equipo apagado repintaba los puntos en verde.
+        if ws.connected and getattr(ws, "last_status", None):
             _on_status(ws.last_status)
+        else:
+            _redibujar()
 
     # ── Handlers de botones ───────────────────────────────────────────────────
 
@@ -518,9 +601,7 @@ def en_vivo_view(page: ft.Page) -> ft.Control:
         # valor pegado en pantalla.
         postura_mala["t1"]  = False
         postura_mala["t12"] = False
-        if back_img_ref.current:
-            new_img = _back_svg_widget(imu_states)
-            back_img_ref.current.src_base64 = new_img.src_base64
+        _redibujar()
         page.update()
 
     start_btn.on_click  = start_session
@@ -586,9 +667,9 @@ def en_vivo_view(page: ft.Page) -> ft.Control:
                                 ft.Container(
                                     content=ft.Stack(
                                         [
-                                            _back_svg_widget(imu_states, img_ref=back_img_ref),
-                                            _pulse_dot(100, 88,  t1_pulse_ref),
-                                            _pulse_dot(100, 148, t12_pulse_ref),
+                                            _back_svg_widget(imu_states, img_ref=back_img_ref, mala=postura_mala),
+                                            _pulse_ring(100, 88,  t1_pulse_ref),
+                                            _pulse_ring(100, 148, t12_pulse_ref),
                                         ],
                                         width=200, height=340,
                                     ),

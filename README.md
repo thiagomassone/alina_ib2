@@ -35,29 +35,29 @@ alina-ib2/
 └── README.md
 ```
 
-## Setup local (una sola vez)
+## Setup local (única vez)
 
 ```bash
-# 1. Cloná el repo
+# 1. Clonar el repo
 git clone https://github.com/thiagomassone/alina_ib2
 cd alina-ib2
 
-# 2. Creá y activá un entorno virtual
+# 2. Crear y activar un entorno virtual
 python -m venv venv
 source venv/bin/activate          # macOS / Linux
 # venv\Scripts\activate           # Windows
 
-# 3. Instalá las dependencias
+# 3. Instalar las dependencias
 pip install -r requirements.txt
 
-# 4. Configurá variables de entorno del backend
+# 4. Configurar variables de entorno del backend
 cp backend/.env.example backend/.env
-# Editá backend/.env y poné un SECRET_KEY largo y aleatorio
+# Editar backend/.env y poner un SECRET_KEY largo y aleatorio
 ```
 
 ## Correr el proyecto
 
-Necesitás **dos terminales** (una para el backend, otra para el frontend), ambas con el venv activado.
+Se Necesitan **dos terminales** (una para el backend, otra para el frontend), ambas con el venv activado.
 
 ### Terminal 1 — backend
 
@@ -92,7 +92,7 @@ flet build web        # bundle estático para desplegar en cualquier hosting
 
 - Trabajar en ramas (`feature/<nombre>`) y abrir Pull Requests contra `main`.
 - No commitear el archivo `.env` ni la base `*.db` (ya están en `.gitignore`).
-- Si agregás dependencias: `pip install <paquete>` y actualizar `requirements.txt` con `pip freeze | grep <paquete>` (o a mano, manteniendo versiones fijas).
+- Si se agregan dependencias: `pip install <paquete>`, actualizar `requirements.txt` con `pip freeze | grep <paquete>` (o a mano, manteniendo versiones fijas).
 
 ## Publicar el repo en GitHub
 

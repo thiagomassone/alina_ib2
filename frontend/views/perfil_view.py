@@ -285,7 +285,6 @@ def perfil_view(page: ft.Page) -> ft.Control:
         options=[
             ft.dropdown.Option("es", "Español"),
             ft.dropdown.Option("en", "English"),
-            ft.dropdown.Option("pt", "Português"),
         ],
         border_color=t.DIVIDER, focused_border_color=t.TEAL,
     )

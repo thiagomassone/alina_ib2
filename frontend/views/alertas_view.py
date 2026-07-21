@@ -1,19 +1,27 @@
-"""Tab 4 — Alertas: hub de notificaciones del sistema."""
+"""Tab Alertas — hub de notificaciones.
+
+- Sin botón "visto": al abrir el tab se marcan todas como vistas (limpia el
+  badge del nav). El contador vive en la barra inferior (ver home_view).
+- Borrado manual: deslizá una notificación hacia la derecha → "Borrar".
+- Las notificaciones tienen tiempo de vida (TTL de 3 días, lo maneja el backend).
+"""
 
 from __future__ import annotations
 from datetime import datetime
 import flet as ft
 import theme as t
-from .components import card, card_label, divider, section_header, alina_logo_lockup
+from .components import section_header
 
-# ── Iconos y colores por tipo de notificación ─────────────────────────────────
-
+# ── Iconos y colores por tipo ─────────────────────────────────────────────────
 _TIPO_META = {
-    "session_score_low":   (ft.icons.FITNESS_CENTER,       t.NEUTRAL, "Sesión"),
-    "device_disconnected": (ft.icons.SENSORS_OFF,          t.BAD,     "Dispositivo"),
-    "haptic_alert":        (ft.icons.VIBRATION,            t.NEUTRAL, "Alerta háptica"),
-    "password_changed":    (ft.icons.LOCK_OUTLINED,        t.GOOD,    "Cuenta"),
-    "calibration_pending": (ft.icons.TUNE,                 t.NEUTRAL, "Dispositivo"),
+    "session_score_low":   (ft.icons.FITNESS_CENTER,        t.NEUTRAL, "Sesión"),
+    "buena_sesion":        (ft.icons.THUMB_UP_OUTLINED,     t.GOOD,    "Sesión"),
+    "nuevo_record":        (ft.icons.EMOJI_EVENTS_OUTLINED, t.NEUTRAL, "Récord"),
+    "racha_en_riesgo":     (ft.icons.LOCAL_FIRE_DEPARTMENT, t.NEUTRAL, "Racha"),
+    "resumen_semanal":     (ft.icons.INSIGHTS,              t.TEAL,    "Resumen"),
+    "device_disconnected": (ft.icons.SENSORS_OFF,           t.BAD,     "Dispositivo"),
+    "calibration_pending": (ft.icons.TUNE,                  t.NEUTRAL, "Dispositivo"),
+    "password_changed":    (ft.icons.LOCK_OUTLINED,         t.GOOD,    "Cuenta"),
 }
 _DEFAULT_META = (ft.icons.NOTIFICATIONS_OUTLINED, t.TEXT_MUTED, "Sistema")
 
@@ -21,238 +29,127 @@ _DEFAULT_META = (ft.icons.NOTIFICATIONS_OUTLINED, t.TEXT_MUTED, "Sistema")
 def _fmt_fecha(iso: str) -> str:
     try:
         dt = datetime.fromisoformat(iso)
-        now = datetime.now()
-        diff = now - dt
+        diff = datetime.now() - dt
         if diff.days == 0:
             h = diff.seconds // 3600
             if h == 0:
                 m = diff.seconds // 60
                 return f"Hace {m} min" if m > 0 else "Ahora"
             return f"Hace {h}h"
-        elif diff.days == 1:
+        if diff.days == 1:
             return "Ayer"
-        elif diff.days < 7:
+        if diff.days < 7:
             return f"Hace {diff.days} días"
-        else:
-            return dt.strftime("%d/%m/%Y")
+        return dt.strftime("%d/%m/%Y")
     except Exception:
         return ""
 
 
-def _notif_row(notif: dict, on_mark_read, last: bool = False) -> ft.Control:
+def _notif_card(notif: dict) -> ft.Control:
     icon, color, categoria = _TIPO_META.get(notif["tipo"], _DEFAULT_META)
-    leida = notif["leida"]
-
-    def tap(_):
-        if not notif["leida"]:
-            on_mark_read(notif["id"])
-
-    row = ft.GestureDetector(
-        on_tap=tap,
-        content=ft.Column(
+    return ft.Container(
+        bgcolor=t.CARD, border_radius=12, padding=14,
+        content=ft.Row(
             [
-                ft.Row(
-                    [
-                        # Ícono con fondo
-                        ft.Container(
-                            content=ft.Icon(icon, color=color, size=20),
-                            width=40, height=40,
-                            bgcolor=f"{color}18",
-                            border_radius=10,
-                            alignment=ft.alignment.center,
-                        ),
-                        # Contenido
-                        ft.Column(
-                            [
-                                ft.Row(
-                                    [
-                                        ft.Text(
-                                            notif["titulo"],
-                                            size=13,
-                                            weight=ft.FontWeight.W_600 if not leida else ft.FontWeight.W_400,
-                                            color=t.TEXT_DARK,
-                                            expand=True,
-                                        ),
-                                        ft.Text(
-                                            _fmt_fecha(notif["created_at"]),
-                                            size=11,
-                                            color=t.TEXT_LIGHT,
-                                        ),
-                                    ],
-                                    vertical_alignment=ft.CrossAxisAlignment.CENTER,
-                                ),
-                                ft.Text(
-                                    notif["mensaje"],
-                                    size=12,
-                                    color=t.TEXT_MUTED,
-                                    max_lines=2,
-                                    overflow=ft.TextOverflow.ELLIPSIS,
-                                ),
-                                ft.Text(
-                                    categoria,
-                                    size=10,
-                                    color=color,
-                                    weight=ft.FontWeight.W_600,
-                                ),
-                            ],
-                            spacing=2,
-                            expand=True,
-                        ),
-                        # Punto de no leída
-                        ft.Container(
-                            width=8, height=8,
-                            bgcolor=t.TEAL,
-                            border_radius=4,
-                            visible=not leida,
-                        ),
-                    ],
-                    spacing=12,
-                    vertical_alignment=ft.CrossAxisAlignment.START,
+                ft.Container(
+                    content=ft.Icon(icon, color=color, size=20),
+                    width=40, height=40, bgcolor=f"{color}18",
+                    border_radius=10, alignment=ft.alignment.center,
                 ),
-            ] + ([] if last else [ft.Container(height=8), divider(), ft.Container(height=8)]),
-            spacing=0,
+                ft.Column(
+                    [
+                        ft.Row(
+                            [ft.Text(notif["titulo"], size=13, weight=ft.FontWeight.W_600,
+                                     color=t.TEXT_DARK, expand=True),
+                             ft.Text(_fmt_fecha(notif["created_at"]), size=11, color=t.TEXT_LIGHT)],
+                            vertical_alignment=ft.CrossAxisAlignment.CENTER,
+                        ),
+                        ft.Text(notif["mensaje"], size=12, color=t.TEXT_MUTED,
+                                max_lines=3, overflow=ft.TextOverflow.ELLIPSIS),
+                        ft.Text(categoria, size=10, color=color, weight=ft.FontWeight.W_600),
+                    ],
+                    spacing=2, expand=True,
+                ),
+            ],
+            spacing=12, vertical_alignment=ft.CrossAxisAlignment.START,
         ),
     )
-    return row
+
+
+def _swipe_bg() -> ft.Control:
+    return ft.Container(
+        bgcolor=t.BAD, border_radius=12, padding=ft.padding.only(left=20),
+        alignment=ft.alignment.center_left,
+        content=ft.Row(
+            [ft.Icon(ft.icons.DELETE_OUTLINE, color=t.CARD, size=20),
+             ft.Text("Borrar", color=t.CARD, size=13, weight=ft.FontWeight.W_600)],
+            spacing=8, tight=True,
+        ),
+    )
 
 
 def alertas_view(page: ft.Page) -> ft.Control:
-    # ── Cargar notificaciones ─────────────────────────────────────────────────
     try:
         notifs = page.api.get_notifications(limit=50)
     except Exception:
         notifs = []
 
-    unread = sum(1 for n in notifs if not n["leida"])
+    # Al abrir el tab, marcar todo como visto → limpia el badge del nav.
+    try:
+        page.api.mark_all_notifications_read()
+    except Exception:
+        pass
 
-    # ── Controles reactivos ───────────────────────────────────────────────────
     list_col   = ft.Ref[ft.Column]()
-    badge_text = ft.Ref[ft.Text]()
-    badge_cont = ft.Ref[ft.Container]()
-    logo_cont  = ft.Ref[ft.Container]()
     empty_cont = ft.Ref[ft.Container]()
 
-    def mark_read(notif_id: int):
+    def _on_delete(nid: int):
         try:
-            page.api.mark_notification_read(notif_id)
+            page.api.delete_notification(nid)
         except Exception:
             pass
-        # Actualizar localmente sin recargar
-        for n in notifs:
-            if n["id"] == notif_id:
-                n["leida"] = True
-        _rebuild_list()
-        page.update()
-
-    def mark_all(_):
+        notifs[:] = [n for n in notifs if n["id"] != nid]
+        if empty_cont.current is not None:
+            empty_cont.current.visible = len(notifs) == 0
         try:
-            page.api.mark_all_notifications_read()
+            page.update()
         except Exception:
             pass
-        for n in notifs:
-            n["leida"] = True
-        _rebuild_list()
-        page.update()
 
-    def _rebuild_list():
-        nonlocal unread
-        unread = sum(1 for n in notifs if not n["leida"])
-        badge_text.current.value = str(unread)
-        badge_cont.current.visible = unread > 0
-        logo_cont.current.visible = unread == 0
-        empty_cont.current.visible = len(notifs) == 0
-        list_col.current.controls = (
-            [_notif_row(n, mark_read, last=(i == len(notifs) - 1)) for i, n in enumerate(notifs)]
-            if notifs else []
+    def _dismissible(notif: dict) -> ft.Control:
+        return ft.Dismissible(
+            key=str(notif["id"]),
+            content=_notif_card(notif),
+            background=_swipe_bg(),
+            dismiss_direction=ft.DismissDirection.START_TO_END,
+            dismiss_thresholds={ft.DismissDirection.START_TO_END: 0.4},
+            on_dismiss=lambda e, nid=notif["id"]: _on_delete(nid),
         )
 
-    # ── Construir lista inicial ───────────────────────────────────────────────
-    initial_rows = (
-        [_notif_row(n, mark_read, last=(i == len(notifs) - 1)) for i, n in enumerate(notifs)]
-        if notifs else []
+    rows = [_dismissible(n) for n in notifs]
+
+    empty = ft.Container(
+        ref=empty_cont,
+        content=ft.Column(
+            [ft.Icon(ft.icons.NOTIFICATIONS_NONE, color=t.TEAL_SOFT, size=48),
+             ft.Container(height=8),
+             ft.Text("Sin notificaciones", size=14, color=t.TEXT_MUTED, weight=ft.FontWeight.W_500),
+             ft.Text("Todo en orden por acá", size=12, color=t.TEXT_LIGHT)],
+            horizontal_alignment=ft.CrossAxisAlignment.CENTER,
+            alignment=ft.MainAxisAlignment.CENTER, spacing=4,
+        ),
+        alignment=ft.alignment.center, padding=ft.padding.symmetric(vertical=48),
+        visible=len(notifs) == 0,
     )
 
     return ft.Column(
         [
-            section_header(
-                "Alertas",
-                "Notificaciones del sistema",
-                action=ft.Row(
-                    [
-                        ft.Container(
-                            ref=badge_cont,
-                            content=ft.Row(
-                                [
-                                    ft.Icon(ft.icons.NOTIFICATIONS_ACTIVE, size=14, color=t.CARD),
-                                    ft.Text(ref=badge_text, value=str(unread), size=11, color=t.CARD, weight=ft.FontWeight.W_700),
-                                ],
-                                spacing=4,
-                            ),
-                            bgcolor=t.BAD,
-                            border_radius=10,
-                            padding=ft.padding.symmetric(horizontal=8, vertical=4),
-                            visible=unread > 0,
-                        ),
-                        ft.Container(
-                            ref=logo_cont,
-                            content=alina_logo_lockup(),
-                            visible=unread == 0,
-                        ),
-                    ],
-                    spacing=0,
-                ),
-            ),
-            ft.Container(height=10),
-
-            # Botón "Marcar todas como leídas"
-            ft.Container(
-                content=ft.TextButton(
-                    "Marcar todas como leídas",
-                    icon=ft.icons.DONE_ALL,
-                    on_click=mark_all,
-                    style=ft.ButtonStyle(color=t.TEAL),
-                ),
-                alignment=ft.alignment.center_right,
-                visible=unread > 0,
-            ),
-
-            # Lista de notificaciones
-            card(
-                ft.Column(
-                    [
-                        card_label("Recientes"),
-                        ft.Container(height=8),
-                        ft.Column(
-                            ref=list_col,
-                            controls=initial_rows,
-                            spacing=0,
-                        ),
-                        # Estado vacío
-                        ft.Container(
-                            ref=empty_cont,
-                            content=ft.Column(
-                                [
-                                    ft.Icon(ft.icons.NOTIFICATIONS_NONE, color=t.TEAL_SOFT, size=48),
-                                    ft.Container(height=8),
-                                    ft.Text("Sin notificaciones", size=14, color=t.TEXT_MUTED, weight=ft.FontWeight.W_500),
-                                    ft.Text("Todo en orden por acá", size=12, color=t.TEXT_LIGHT),
-                                ],
-                                horizontal_alignment=ft.CrossAxisAlignment.CENTER,
-                                alignment=ft.MainAxisAlignment.CENTER,
-                                spacing=4,
-                            ),
-                            alignment=ft.alignment.center,
-                            padding=ft.padding.symmetric(vertical=32),
-                            visible=len(notifs) == 0,
-                        ),
-                    ],
-                    spacing=0,
-                )
-            ),
-
+            section_header("Alertas", "Notificaciones del sistema"),
+            ft.Text("Deslizá una notificación para borrarla.", size=11, color=t.TEXT_LIGHT),
+            ft.Container(height=6),
+            ft.Column(ref=list_col, controls=rows, spacing=10),
+            empty,
             ft.Container(height=12),
         ],
-        spacing=12,
-        scroll=ft.ScrollMode.AUTO,
-        expand=True,
+        spacing=10, scroll=ft.ScrollMode.AUTO, expand=True,
     )

@@ -199,6 +199,49 @@ class ApiClient:
         r.raise_for_status()
         return r.json()
 
+    def get_racha(self) -> dict:
+        """Racha de uso: días consecutivos con >=1 sesión.
+
+        Devuelve: racha_actual (int), racha_record (int), activa_hoy (bool).
+        """
+        r = httpx.get(
+            f"{self.base_url}/sessions/racha",
+            headers=self._auth_headers(),
+            timeout=10,
+        )
+        r.raise_for_status()
+        return r.json()
+
+    def debug_set_racha(self, dias: int) -> dict:
+        """[DEMO] Forzar la racha a un valor exacto (backend en modo debug)."""
+        r = httpx.post(
+            f"{self.base_url}/sessions/debug/racha/set",
+            params={"dias": dias},
+            headers=self._auth_headers(),
+            timeout=10,
+        )
+        r.raise_for_status()
+        return r.json()
+
+    def debug_sumar_racha(self) -> dict:
+        """[DEMO] Sumar 1 a la racha — dispara la animación en la app."""
+        r = httpx.post(
+            f"{self.base_url}/sessions/debug/racha/sumar",
+            headers=self._auth_headers(),
+            timeout=10,
+        )
+        r.raise_for_status()
+        return r.json()
+
+    def debug_reset_racha(self) -> None:
+        """[DEMO] Limpiar el override y volver a la racha real."""
+        r = httpx.delete(
+            f"{self.base_url}/sessions/debug/racha",
+            headers=self._auth_headers(),
+            timeout=10,
+        )
+        r.raise_for_status()
+
     def delete_session(self, session_id: int) -> None:
         """Borrar una sesión por ID."""
         r = httpx.delete(
@@ -243,3 +286,22 @@ class ApiClient:
             timeout=10,
         )
         r.raise_for_status()
+
+    def delete_notification(self, notification_id: int) -> None:
+        """Borrado manual de una notificación (swipe → borrar)."""
+        r = httpx.delete(
+            f"{self.base_url}/notifications/{notification_id}",
+            headers=self._auth_headers(),
+            timeout=10,
+        )
+        r.raise_for_status()
+
+    def notify_device_disconnected(self) -> dict:
+        """Avisar al backend que el ESP se desconectó (con debounce del lado servidor)."""
+        r = httpx.post(
+            f"{self.base_url}/notifications/device-disconnected",
+            headers=self._auth_headers(),
+            timeout=10,
+        )
+        r.raise_for_status()
+        return r.json()

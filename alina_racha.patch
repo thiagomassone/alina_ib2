@@ -1,0 +1,504 @@
+diff --git a/backend/app/config.py b/backend/app/config.py
+index 7affaec..aa84e76 100644
+--- a/backend/app/config.py
++++ b/backend/app/config.py
+@@ -16,6 +16,9 @@ class Settings(BaseSettings):
+     algorithm: str = "HS256"
+     access_token_expire_minutes: int = 60 * 24  # 1 día
+ 
++    # Endpoints de debug/demo (forzar la racha, etc.). Poner en False en producción.
++    debug: bool = True
++
+     # CORS (orígenes permitidos para el frontend Flet web)
+     cors_origins: list[str] = [
+         "http://localhost",
+diff --git a/backend/app/routers/sessions.py b/backend/app/routers/sessions.py
+index ebe9bf6..9926344 100644
+--- a/backend/app/routers/sessions.py
++++ b/backend/app/routers/sessions.py
+@@ -1,15 +1,16 @@
+ """Endpoints de sesiones de uso del dispositivo ALINA."""
+ 
+ from __future__ import annotations
+-from datetime import date, datetime, timezone
++from datetime import date, datetime, timedelta, timezone
+ 
+ from fastapi import APIRouter, Depends, HTTPException, status
+ from sqlalchemy import func
+ from sqlalchemy.orm import Session as DBSession
+ 
++from ..config import settings
+ from ..database import get_db
+ from ..models import Session as SessionModel, User, crear_notificacion
+-from ..schemas import ScoreSummary, SessionCreate, SessionOut
++from ..schemas import RachaOut, ScoreSummary, SessionCreate, SessionOut
+ from ..security import get_current_user
+ 
+ router = APIRouter(prefix="/sessions", tags=["sessions"])
+@@ -179,4 +180,121 @@ def delete_session(
+     if not session:
+         raise HTTPException(status_code=404, detail="Sesión no encontrada")
+     db.delete(session)
+-    db.commit()
+\ No newline at end of file
++    db.commit()
++
++# ─────────────────────────────────────────────────────────────────────────────
++# Racha de uso
++# ─────────────────────────────────────────────────────────────────────────────
++# Override en memoria para forzar la racha durante la demo de la presentación.
++# Solo activo con settings.debug. No toca la base de datos y se resetea al
++# reiniciar uvicorn.
++_racha_override: dict[int, int] = {}
++
++
++def _dias_con_sesion(db: DBSession, user_id: int) -> set[date]:
++    """Conjunto de fechas (una por día) en las que el usuario tuvo >=1 sesión."""
++    rows = (
++        db.query(func.date(SessionModel.started_at))
++        .filter(SessionModel.user_id == user_id)
++        .distinct()
++        .all()
++    )
++    dias: set[date] = set()
++    for (d,) in rows:
++        if d is None:
++            continue
++        if isinstance(d, str):
++            d = date.fromisoformat(d)
++        elif isinstance(d, datetime):
++            d = d.date()
++        dias.add(d)
++    return dias
++
++
++def _calcular_racha(dias: set[date], hoy: date | None = None) -> tuple[int, bool]:
++    """Días consecutivos con sesión, contando hacia atrás desde hoy.
++
++    Si hoy todavía no hay sesión pero ayer sí, la racha sigue viva (se ancla en
++    ayer) hasta que termine el día. Devuelve (racha_actual, activa_hoy).
++    """
++    if not dias:
++        return 0, False
++    hoy = hoy or date.today()
++    activa_hoy = hoy in dias
++    ancla = hoy if activa_hoy else hoy - timedelta(days=1)
++    if ancla not in dias:
++        return 0, activa_hoy
++    n, d = 0, ancla
++    while d in dias:
++        n += 1
++        d -= timedelta(days=1)
++    return n, activa_hoy
++
++
++def _racha_record(dias: set[date]) -> int:
++    """Racha más larga histórica."""
++    if not dias:
++        return 0
++    ordenados = sorted(dias)
++    mejor = actual = 1
++    for prev, cur in zip(ordenados, ordenados[1:]):
++        actual = actual + 1 if (cur - prev).days == 1 else 1
++        mejor = max(mejor, actual)
++    return mejor
++
++
++@router.get("/racha", response_model=RachaOut)
++def get_racha(
++    db: DBSession = Depends(get_db),
++    current_user: User = Depends(get_current_user),
++):
++    """Racha de uso del usuario (para el badge del Resumen)."""
++    dias = _dias_con_sesion(db, current_user.id)
++    actual, activa_hoy = _calcular_racha(dias)
++    record = _racha_record(dias)
++    if settings.debug and current_user.id in _racha_override:
++        actual = _racha_override[current_user.id]
++        activa_hoy = True
++        record = max(record, actual)
++    return RachaOut(racha_actual=actual, racha_record=record, activa_hoy=activa_hoy)
++
++
++def _require_debug() -> None:
++    if not settings.debug:
++        raise HTTPException(status_code=404, detail="No disponible")
++
++
++@router.post("/debug/racha/set", response_model=RachaOut)
++def debug_set_racha(
++    dias: int,
++    db: DBSession = Depends(get_db),
++    current_user: User = Depends(get_current_user),
++):
++    """[DEMO] Forzar la racha a un valor exacto. Solo con settings.debug."""
++    _require_debug()
++    _racha_override[current_user.id] = max(0, dias)
++    return get_racha(db=db, current_user=current_user)
++
++
++@router.post("/debug/racha/sumar", response_model=RachaOut)
++def debug_sumar_racha(
++    db: DBSession = Depends(get_db),
++    current_user: User = Depends(get_current_user),
++):
++    """[DEMO] Sumar 1 a la racha (dispara la animación en la app). Solo con settings.debug."""
++    _require_debug()
++    if current_user.id in _racha_override:
++        base = _racha_override[current_user.id]
++    else:
++        base, _ = _calcular_racha(_dias_con_sesion(db, current_user.id))
++    _racha_override[current_user.id] = base + 1
++    return get_racha(db=db, current_user=current_user)
++
++
++@router.delete("/debug/racha", status_code=status.HTTP_204_NO_CONTENT)
++def debug_reset_racha(
++    current_user: User = Depends(get_current_user),
++):
++    """[DEMO] Limpiar el override y volver a la racha real. Solo con settings.debug."""
++    _require_debug()
++    _racha_override.pop(current_user.id, None)
+diff --git a/backend/app/schemas.py b/backend/app/schemas.py
+index 50fa574..f16ff79 100644
+--- a/backend/app/schemas.py
++++ b/backend/app/schemas.py
+@@ -126,4 +126,11 @@ class NotificationOut(BaseModel):
+     leida: bool
+     created_at: datetime
+ 
+-    model_config = ConfigDict(from_attributes=True)
+\ No newline at end of file
++    model_config = ConfigDict(from_attributes=True)
++
++# ─── Racha ───
++class RachaOut(BaseModel):
++    """Racha de uso para el badge del Resumen."""
++    racha_actual: int      # días consecutivos hasta hoy (o ayer, si hoy aún no hay sesión)
++    racha_record: int      # racha más larga histórica
++    activa_hoy: bool       # True si hoy ya hubo al menos una sesión
+diff --git a/frontend/api_client.py b/frontend/api_client.py
+index 775b141..aeba96a 100644
+--- a/frontend/api_client.py
++++ b/frontend/api_client.py
+@@ -199,6 +199,49 @@ class ApiClient:
+         r.raise_for_status()
+         return r.json()
+ 
++    def get_racha(self) -> dict:
++        """Racha de uso: días consecutivos con >=1 sesión.
++
++        Devuelve: racha_actual (int), racha_record (int), activa_hoy (bool).
++        """
++        r = httpx.get(
++            f"{self.base_url}/sessions/racha",
++            headers=self._auth_headers(),
++            timeout=10,
++        )
++        r.raise_for_status()
++        return r.json()
++
++    def debug_set_racha(self, dias: int) -> dict:
++        """[DEMO] Forzar la racha a un valor exacto (backend en modo debug)."""
++        r = httpx.post(
++            f"{self.base_url}/sessions/debug/racha/set",
++            params={"dias": dias},
++            headers=self._auth_headers(),
++            timeout=10,
++        )
++        r.raise_for_status()
++        return r.json()
++
++    def debug_sumar_racha(self) -> dict:
++        """[DEMO] Sumar 1 a la racha — dispara la animación en la app."""
++        r = httpx.post(
++            f"{self.base_url}/sessions/debug/racha/sumar",
++            headers=self._auth_headers(),
++            timeout=10,
++        )
++        r.raise_for_status()
++        return r.json()
++
++    def debug_reset_racha(self) -> None:
++        """[DEMO] Limpiar el override y volver a la racha real."""
++        r = httpx.delete(
++            f"{self.base_url}/sessions/debug/racha",
++            headers=self._auth_headers(),
++            timeout=10,
++        )
++        r.raise_for_status()
++
+     def delete_session(self, session_id: int) -> None:
+         """Borrar una sesión por ID."""
+         r = httpx.delete(
+diff --git a/frontend/views/components.py b/frontend/views/components.py
+index f35fef5..028d5ff 100644
+--- a/frontend/views/components.py
++++ b/frontend/views/components.py
+@@ -84,20 +84,29 @@ def alina_logo_lockup(mark_size: int = 22, text_size: int = 14) -> ft.Control:
+ 
+ # ── Estructurales ─────────────────────────────────────────────────────────────
+ 
+-def section_header(title: str, subtitle: str, action: ft.Control | None = None) -> ft.Control:
++def section_header(
++    title: str,
++    subtitle: str,
++    action: ft.Control | None = None,
++    badge: ft.Control | None = None,
++) -> ft.Control:
+     right = action if action is not None else alina_logo_lockup()
++    row: list[ft.Control] = [
++        ft.Column(
++            [
++                ft.Text(title, size=22, weight=ft.FontWeight.W_700, color=t.TEXT_DARK),
++                ft.Text(subtitle, size=13, color=t.TEXT_MUTED),
++            ],
++            spacing=2,
++            expand=True,
++        ),
++    ]
++    if badge is not None:
++        row.append(badge)
++    row.append(right)
+     return ft.Row(
+-        [
+-            ft.Column(
+-                [
+-                    ft.Text(title, size=22, weight=ft.FontWeight.W_700, color=t.TEXT_DARK),
+-                    ft.Text(subtitle, size=13, color=t.TEXT_MUTED),
+-                ],
+-                spacing=2,
+-                expand=True,
+-            ),
+-            right,
+-        ],
++        row,
++        spacing=10,
+         vertical_alignment=ft.CrossAxisAlignment.CENTER,
+     )
+ 
+diff --git a/frontend/views/racha.py b/frontend/views/racha.py
+new file mode 100644
+index 0000000..6887973
+--- /dev/null
++++ b/frontend/views/racha.py
+@@ -0,0 +1,140 @@
++"""Badge de racha de uso para el header del Resumen.
++
++Muestra una llama + el número de días de racha, en un pill al lado del saludo.
++Cuando la racha sube un día, reproduce una animación estilo Duolingo:
++la llama se prende (gris → ámbar), hace un bounce y salta confeti.
++
++Uso:
++    badge = RachaBadge(page, value=6)
++    section_header("Hola, Thiago", "Resumen de hoy", badge=badge.control)
++    ...
++    badge.set(6)            # setear sin animar (carga inicial)
++    badge.animate_to(7)     # setear + celebrar (cuando sube la racha)
++"""
++
++from __future__ import annotations
++
++import math
++import random
++import threading
++import time
++
++import flet as ft
++import theme as t
++
++
++# Poné en False si querés desactivar el confeti y dejar solo bounce + ignite.
++CONFETTI = True
++
++_AMBER      = t.NEUTRAL        # "#F59E0B" — llama prendida
++_AMBER_DK   = "#854F0B"        # número sobre el pill prendido
++_AMBER_TINT = "#FAEEDA"        # fondo del pill prendido
++_AMBER_BRD  = "#F6D9A6"        # borde del pill prendido
++_OFF        = t.TEXT_LIGHT     # "#9AA4B0" — llama/número apagados
++_OFF_BG     = t.CARD           # fondo del pill apagado
++_OFF_BRD    = t.DIVIDER        # borde del pill apagado
++
++
++class RachaBadge:
++    def __init__(self, page: ft.Page, value: int = 0) -> None:
++        self.page = page
++        self.value = int(value)
++
++        self._flame = ft.Icon(ft.icons.LOCAL_FIRE_DEPARTMENT, size=18)
++        self._count = ft.Text(str(self.value), size=15, weight=ft.FontWeight.W_600)
++
++        self._pill = ft.Container(
++            content=ft.Row([self._flame, self._count], spacing=4, tight=True),
++            padding=ft.padding.only(left=10, right=12, top=6, bottom=6),
++            border_radius=999,
++            scale=1.0,
++            animate_scale=ft.Animation(430, ft.AnimationCurve.BOUNCE_OUT),
++            tooltip="Racha de uso: días seguidos con al menos una sesión",
++        )
++
++        # Stack para tirar el confeti por encima del pill sin recortarlo.
++        self._stack = ft.Stack([self._pill], clip_behavior=ft.ClipBehavior.NONE)
++        self.control = self._stack
++
++        self._apply(active=self.value > 0)
++
++    # ── API pública ──────────────────────────────────────────────────────────
++    def set(self, value: int, animate: bool = False) -> None:
++        value = int(value)
++        self.value = value
++        self._count.value = str(value)
++        if animate and value > 0:
++            self.celebrate()
++        else:
++            self._apply(active=value > 0)
++            self._safe_update()
++
++    def animate_to(self, value: int) -> None:
++        self.set(value, animate=True)
++
++    def celebrate(self) -> None:
++        def run():
++            try:
++                self._apply(active=True)
++                self._pill.scale = 1.0
++                self._safe_update()
++                time.sleep(0.02)
++                self._pill.scale = 1.4
++                self._safe_update()
++                self._confetti()
++                time.sleep(0.42)
++                self._pill.scale = 1.0
++                self._safe_update()
++            except Exception:
++                pass
++        threading.Thread(target=run, daemon=True).start()
++
++    # ── Interno ──────────────────────────────────────────────────────────────
++    def _apply(self, active: bool) -> None:
++        self._flame.color = _AMBER if active else _OFF
++        self._count.color = _AMBER_DK if active else _OFF
++        self._pill.bgcolor = _AMBER_TINT if active else _OFF_BG
++        self._pill.border = ft.border.all(0.5, _AMBER_BRD if active else _OFF_BRD)
++
++    def _confetti(self) -> None:
++        if not CONFETTI:
++            return
++        try:
++            cx, cy = 24, 14  # aprox. centro del pill dentro del stack
++            cols = ["#03A097", t.NAVY, _AMBER, "#EF9F27", "#5DCAA5"]
++            parts: list[ft.Container] = []
++            for i in range(12):
++                p = ft.Container(
++                    width=6, height=6, bgcolor=cols[i % len(cols)], border_radius=2,
++                    left=cx, top=cy, opacity=1.0,
++                    animate_position=ft.Animation(820, ft.AnimationCurve.DECELERATE),
++                    animate_opacity=ft.Animation(820, ft.AnimationCurve.EASE_OUT),
++                )
++                parts.append(p)
++            self._stack.controls.extend(parts)
++            self._safe_update()
++
++            def fly():
++                time.sleep(0.02)
++                for p in parts:
++                    ang = random.uniform(0, 2 * math.pi)
++                    dist = random.uniform(26, 58)
++                    p.left = cx + math.cos(ang) * dist
++                    p.top = cy + math.sin(ang) * dist - 12  # sesgo hacia arriba
++                    p.opacity = 0.0
++                self._safe_update()
++                time.sleep(1.0)
++                for p in parts:
++                    if p in self._stack.controls:
++                        self._stack.controls.remove(p)
++                self._safe_update()
++
++            threading.Thread(target=fly, daemon=True).start()
++        except Exception:
++            pass
++
++    def _safe_update(self) -> None:
++        try:
++            self.page.update()
++        except Exception:
++            pass
+diff --git a/frontend/views/resumen_view.py b/frontend/views/resumen_view.py
+index 5b2211c..15c9b0e 100644
+--- a/frontend/views/resumen_view.py
++++ b/frontend/views/resumen_view.py
+@@ -6,6 +6,7 @@ import time
+ import flet as ft
+ import theme as t
+ from .components import card, card_label, dot, pill, divider, section_header
++from .racha import RachaBadge
+ 
+ 
+ # ─── Panel de dispositivo (BottomSheet) ──────────────────────────────────────
+@@ -744,6 +745,39 @@ def resumen_view(page: ft.Page) -> ft.Control:
+     min_buena_ref    = ft.Ref[ft.Text]()
+     min_mala_ref     = ft.Ref[ft.Text]()
+ 
++    # ── Badge de racha (header) ───────────────────────────────────────────────
++    def _load_racha():
++        """Racha actual (int) o None si el backend no responde."""
++        try:
++            return int(page.api.get_racha().get("racha_actual", 0))
++        except Exception:
++            return None
++
++    _racha_val = _load_racha()
++    racha_badge = RachaBadge(page, value=_racha_val or 0)
++    # Guardamos la racha de arranque como "vista": solo festejamos cuando SUBE
++    # respecto de lo último visto (lo detecta refresh() o el force por terminal).
++    if _racha_val is not None:
++        try:
++            page.client_storage.set("alina_racha_seen", _racha_val)
++        except Exception:
++            pass
++
++    def _refresh_racha():
++        nueva = _load_racha()
++        if nueva is None:
++            return
++        if nueva > racha_badge.value:
++            racha_badge.animate_to(nueva)   # subió → celebrar
++        elif nueva != racha_badge.value:
++            racha_badge.set(nueva)          # bajó/reset → sin animación
++        else:
++            return
++        try:
++            page.client_storage.set("alina_racha_seen", nueva)
++        except Exception:
++            pass
++
+     # ── Nombre compartido entre card y sheet ─────────────────────────────────
+     card_name_text  = ft.Text(dev["name"], size=14, weight=ft.FontWeight.W_600, color=t.TEXT_DARK)
+     sheet_name_text = ft.Text(dev["name"], size=16, weight=ft.FontWeight.W_700, color=t.TEXT_DARK)
+@@ -821,6 +855,9 @@ def resumen_view(page: ft.Page) -> ft.Control:
+         min_buena_ref.current.value = _fmt_min(new_today["min_buena"])
+         min_mala_ref.current.value  = _fmt_min(new_today["min_mala"])
+ 
++        # Racha: si subió respecto de lo mostrado, dispara la animación.
++        _refresh_racha()
++
+     def on_device_change(connected: bool, calibrated: bool = False):
+         """Llamado desde ws_client.on_connect / on_disconnect — actualiza solo la card del dispositivo."""
+         try:
+@@ -851,6 +888,7 @@ def resumen_view(page: ft.Page) -> ft.Control:
+         alertas_ref.current.value   = str(new_today["alertas"])
+         min_buena_ref.current.value = _fmt_min(new_today["min_buena"])
+         min_mala_ref.current.value  = _fmt_min(new_today["min_mala"])
++        _refresh_racha()
+         try:
+             page.update()
+         except Exception:
+@@ -873,7 +911,7 @@ def resumen_view(page: ft.Page) -> ft.Control:
+     # ── Construir UI ──────────────────────────────────────────────────────────
+     col = ft.Column(
+         [
+-            section_header(f"Hola, {username}", "Resumen de hoy"),
++            section_header(f"Hola, {username}", "Resumen de hoy", badge=racha_badge.control),
+             ft.Container(height=10),
+             ft.Container(
+                 ref=device_card_ref,

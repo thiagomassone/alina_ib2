@@ -6,6 +6,7 @@ import time
 import flet as ft
 import theme as t
 from .components import card, card_label, dot, pill, divider, section_header
+from .racha import RachaBadge
 
 
 # ─── Panel de dispositivo (BottomSheet) ──────────────────────────────────────
@@ -744,6 +745,39 @@ def resumen_view(page: ft.Page) -> ft.Control:
     min_buena_ref    = ft.Ref[ft.Text]()
     min_mala_ref     = ft.Ref[ft.Text]()
 
+    # ── Badge de racha (header) ───────────────────────────────────────────────
+    def _load_racha():
+        """Racha actual (int) o None si el backend no responde."""
+        try:
+            return int(page.api.get_racha().get("racha_actual", 0))
+        except Exception:
+            return None
+
+    _racha_val = _load_racha()
+    racha_badge = RachaBadge(page, value=_racha_val or 0)
+    # Guardamos la racha de arranque como "vista": solo festejamos cuando SUBE
+    # respecto de lo último visto (lo detecta refresh() o el force por terminal).
+    if _racha_val is not None:
+        try:
+            page.client_storage.set("alina_racha_seen", _racha_val)
+        except Exception:
+            pass
+
+    def _refresh_racha():
+        nueva = _load_racha()
+        if nueva is None:
+            return
+        if nueva > racha_badge.value:
+            racha_badge.animate_to(nueva)   # subió → celebrar
+        elif nueva != racha_badge.value:
+            racha_badge.set(nueva)          # bajó/reset → sin animación
+        else:
+            return
+        try:
+            page.client_storage.set("alina_racha_seen", nueva)
+        except Exception:
+            pass
+
     # ── Nombre compartido entre card y sheet ─────────────────────────────────
     card_name_text  = ft.Text(dev["name"], size=14, weight=ft.FontWeight.W_600, color=t.TEXT_DARK)
     sheet_name_text = ft.Text(dev["name"], size=16, weight=ft.FontWeight.W_700, color=t.TEXT_DARK)
@@ -813,13 +847,16 @@ def resumen_view(page: ft.Page) -> ft.Control:
         )
 
         # Actualizar score
-        score_card_ref.current.content = _score_card(score=new_score).content
+        score_card_ref.current.content = _score_card(score=new_score)
 
         # Actualizar métricas
         tiempo_ref.current.value    = new_today["tiempo"]
         alertas_ref.current.value   = str(new_today["alertas"])
         min_buena_ref.current.value = _fmt_min(new_today["min_buena"])
         min_mala_ref.current.value  = _fmt_min(new_today["min_mala"])
+
+        # Racha: si subió respecto de lo mostrado, dispara la animación.
+        _refresh_racha()
 
     def on_device_change(connected: bool, calibrated: bool = False):
         """Llamado desde ws_client.on_connect / on_disconnect — actualiza solo la card del dispositivo."""
@@ -846,11 +883,12 @@ def resumen_view(page: ft.Page) -> ft.Control:
         """Llamado desde en_vivo_view cuando se guarda una sesión — actualiza score y métricas."""
         new_score = _load_score()
         new_today = _load_today()
-        score_card_ref.current.content = _score_card(score=new_score).content
+        score_card_ref.current.content = _score_card(score=new_score)
         tiempo_ref.current.value    = new_today["tiempo"]
         alertas_ref.current.value   = str(new_today["alertas"])
         min_buena_ref.current.value = _fmt_min(new_today["min_buena"])
         min_mala_ref.current.value  = _fmt_min(new_today["min_mala"])
+        _refresh_racha()
         try:
             page.update()
         except Exception:
@@ -873,7 +911,7 @@ def resumen_view(page: ft.Page) -> ft.Control:
     # ── Construir UI ──────────────────────────────────────────────────────────
     col = ft.Column(
         [
-            section_header(f"Hola, {username}", "Resumen de hoy"),
+            section_header(f"Hola, {username}", "Resumen de hoy", badge=racha_badge.control),
             ft.Container(height=10),
             ft.Container(
                 ref=device_card_ref,

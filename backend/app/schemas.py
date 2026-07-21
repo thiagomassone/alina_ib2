@@ -127,3 +127,10 @@ class NotificationOut(BaseModel):
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+# ─── Racha ───
+class RachaOut(BaseModel):
+    """Racha de uso para el badge del Resumen."""
+    racha_actual: int      # días consecutivos hasta hoy (o ayer, si hoy aún no hay sesión)
+    racha_record: int      # racha más larga histórica
+    activa_hoy: bool       # True si hoy ya hubo al menos una sesión

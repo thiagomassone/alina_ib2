@@ -59,10 +59,10 @@ def _fmt_min(m: float) -> str:
 def _score_badge(score: int) -> ft.Control:
     color = t.GOOD if score >= 80 else (t.NEUTRAL if score >= 65 else t.BAD)
     return ft.Container(
-        content=ft.Text(str(score), size=13, weight=ft.FontWeight.W_700, color=t.CARD),
+        content=ft.Text(str(score), size=13, weight=ft.FontWeight.W_700, color=t.CARD, no_wrap=True),
         bgcolor=color, border_radius=8,
         padding=ft.padding.symmetric(horizontal=8, vertical=3),
-        width=38, alignment=ft.alignment.center,
+        width=46, alignment=ft.alignment.center,
     )
 
 

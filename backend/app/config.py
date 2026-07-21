@@ -16,6 +16,9 @@ class Settings(BaseSettings):
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 60 * 24  # 1 día
 
+    # Endpoints de debug/demo (forzar la racha, etc.). Poner en False en producción.
+    debug: bool = True
+
     # CORS (orígenes permitidos para el frontend Flet web)
     cors_origins: list[str] = [
         "http://localhost",

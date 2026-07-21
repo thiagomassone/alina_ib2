@@ -84,20 +84,29 @@ def alina_logo_lockup(mark_size: int = 22, text_size: int = 14) -> ft.Control:
 
 # ── Estructurales ─────────────────────────────────────────────────────────────
 
-def section_header(title: str, subtitle: str, action: ft.Control | None = None) -> ft.Control:
+def section_header(
+    title: str,
+    subtitle: str,
+    action: ft.Control | None = None,
+    badge: ft.Control | None = None,
+) -> ft.Control:
     right = action if action is not None else alina_logo_lockup()
+    row: list[ft.Control] = [
+        ft.Column(
+            [
+                ft.Text(title, size=22, weight=ft.FontWeight.W_700, color=t.TEXT_DARK),
+                ft.Text(subtitle, size=13, color=t.TEXT_MUTED),
+            ],
+            spacing=2,
+            expand=True,
+        ),
+    ]
+    if badge is not None:
+        row.append(badge)
+    row.append(right)
     return ft.Row(
-        [
-            ft.Column(
-                [
-                    ft.Text(title, size=22, weight=ft.FontWeight.W_700, color=t.TEXT_DARK),
-                    ft.Text(subtitle, size=13, color=t.TEXT_MUTED),
-                ],
-                spacing=2,
-                expand=True,
-            ),
-            right,
-        ],
+        row,
+        spacing=10,
         vertical_alignment=ft.CrossAxisAlignment.CENTER,
     )
 

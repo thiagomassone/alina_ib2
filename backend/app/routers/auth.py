@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from ..database import get_db
 from ..models import Notification, User, UserPreferences, crear_notificacion
+from ..notif_texts import notif_text, user_lang
 from ..schemas import ChangePasswordRequest, Token, UserCreate, UserOut, UserProfileUpdate
 from ..security import create_access_token, get_current_user, hash_password, verify_password
 
@@ -106,12 +107,13 @@ def change_password(
         raise HTTPException(status_code=400, detail="La nueva contraseña debe tener al menos 8 caracteres")
     current_user.hashed_password = hash_password(payload.password_nuevo)
     db.commit()
-    # Notificación de seguridad
+    # Notificación de seguridad (en el idioma del usuario)
+    _ti, _ms = notif_text("password_changed", user_lang(db, current_user.id))
     crear_notificacion(
         db=db,
         user_id=current_user.id,
         tipo="password_changed",
-        titulo="Contraseña actualizada",
-        mensaje="Tu contraseña fue cambiada exitosamente. Si no fuiste vos, contactá al soporte.",
+        titulo=_ti,
+        mensaje=_ms,
     )
     return {"ok": True}

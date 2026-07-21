@@ -3,6 +3,8 @@
 from __future__ import annotations
 import flet as ft
 import theme as t
+import i18n
+from i18n import tr, set_lang
 from .components import card, card_label, divider, section_header, show_snack
 
 
@@ -15,7 +17,7 @@ def _avatar(foto_b64: str | None, nombre: str, size: int = 52) -> ft.Control:
         )
     initial = (nombre[0].upper() if nombre else "?")
     return ft.Container(
-        content=ft.Text(initial, size=size * 0.4, weight=ft.FontWeight.W_700, color=t.CARD),
+        content=ft.Text(initial, size=size * 0.4, weight=ft.FontWeight.W_700, color=t.ON_COLOR),
         width=size, height=size, bgcolor=t.TEAL, border_radius=size,
         alignment=ft.alignment.center,
     )
@@ -23,7 +25,7 @@ def _avatar(foto_b64: str | None, nombre: str, size: int = 52) -> ft.Control:
 
 def _field(label: str, value: str, password: bool = False, keyboard=ft.KeyboardType.TEXT) -> ft.TextField:
     return ft.TextField(
-        label=label, value=value,
+        label=tr(label), value=value,
         password=password, can_reveal_password=password,
         keyboard_type=keyboard,
         border_color=t.DIVIDER, focused_border_color=t.TEAL,
@@ -42,12 +44,12 @@ def _edit_profile_view(page: ft.Page, user: dict, on_saved) -> ft.View:
     email_f    = _field("Email",    user.get("email")    or "", keyboard=ft.KeyboardType.EMAIL)
 
     sexo_dd = ft.Dropdown(
-        label="Sexo",
+        label=tr("Sexo"),
         value=user.get("sexo") or None,
         options=[
             ft.dropdown.Option("M",    "Masculino"),
             ft.dropdown.Option("F",    "Femenino"),
-            ft.dropdown.Option("otro", "Prefiero no decir"),
+            ft.dropdown.Option("otro", tr("Prefiero no decir")),
         ],
         border_color=t.DIVIDER, focused_border_color=t.TEAL, border_radius=8,
     )
@@ -70,7 +72,7 @@ def _edit_profile_view(page: ft.Page, user: dict, on_saved) -> ft.View:
         page.overlay.append(picker)
         page.update()
         picker.pick_files(
-            dialog_title="Seleccioná tu foto",
+            dialog_title=tr("Seleccioná tu foto"),
             allowed_extensions=["jpg", "jpeg", "png", "webp"],
             allow_multiple=False,
         )
@@ -85,7 +87,7 @@ def _edit_profile_view(page: ft.Page, user: dict, on_saved) -> ft.View:
             ext = f.name.split(".")[-1].lower()
             ct = "image/jpeg" if ext in ("jpg", "jpeg") else f"image/{ext}"
             result = page.api.upload_foto(data, ct)
-            foto_status.value = "Foto actualizada ✓"
+            foto_status.value = tr("Foto actualizada ✓")
             foto_status.color = t.GOOD
             avatar_ref.current.content = _avatar(result.get("foto_b64"), nombre_f.value or "?", size=80)
             on_saved(result)
@@ -143,7 +145,7 @@ def _edit_profile_view(page: ft.Page, user: dict, on_saved) -> ft.View:
         padding=0,
         appbar=ft.AppBar(
             leading=ft.IconButton(ft.icons.ARROW_BACK, on_click=go_back, icon_color=t.NAVY),
-            title=ft.Text("Editar perfil", size=18, weight=ft.FontWeight.W_700, color=t.TEXT_DARK),
+            title=ft.Text(tr("Editar perfil"), size=18, weight=ft.FontWeight.W_700, color=t.TEXT_DARK),
             bgcolor=t.CARD,
             elevation=1,
         ),
@@ -164,7 +166,7 @@ def _edit_profile_view(page: ft.Page, user: dict, on_saved) -> ft.View:
                                 ft.Row(
                                     [
                                         ft.TextButton(
-                                            "Cambiar foto",
+                                            tr("Cambiar foto"),
                                             icon=ft.icons.CAMERA_ALT_OUTLINED,
                                             on_click=pick_foto,
                                             style=ft.ButtonStyle(color=t.TEAL),
@@ -183,7 +185,7 @@ def _edit_profile_view(page: ft.Page, user: dict, on_saved) -> ft.View:
                         # Datos personales
                         card(ft.Column(
                             [
-                                card_label("Datos personales"),
+                                card_label(tr("Datos personales")),
                                 ft.Container(height=12),
                                 nombre_f,
                                 apellido_f,
@@ -194,10 +196,10 @@ def _edit_profile_view(page: ft.Page, user: dict, on_saved) -> ft.View:
                                 email_f,
                                 ft.Container(height=4),
                                 ft.FilledButton(
-                                    "Guardar perfil",
+                                    tr("Guardar perfil"),
                                     icon=ft.icons.SAVE_OUTLINED,
                                     on_click=save_profile,
-                                    style=ft.ButtonStyle(bgcolor=t.TEAL, color=t.CARD),
+                                    style=ft.ButtonStyle(bgcolor=t.TEAL, color=t.ON_COLOR),
                                     width=float("inf"),
                                 ),
                             ],
@@ -207,17 +209,17 @@ def _edit_profile_view(page: ft.Page, user: dict, on_saved) -> ft.View:
                         # Cambiar contraseña
                         card(ft.Column(
                             [
-                                card_label("Cambiar contraseña"),
+                                card_label(tr("Cambiar contraseña")),
                                 ft.Container(height=12),
                                 pass_actual_f,
                                 pass_nuevo_f,
                                 pass_conf_f,
                                 ft.Container(height=4),
                                 ft.FilledButton(
-                                    "Actualizar contraseña",
+                                    tr("Actualizar contraseña"),
                                     icon=ft.icons.LOCK_OUTLINED,
                                     on_click=change_password,
-                                    style=ft.ButtonStyle(bgcolor=t.NAVY, color=t.CARD),
+                                    style=ft.ButtonStyle(bgcolor=t.NAVY, color=t.ON_COLOR),
                                     width=float("inf"),
                                 ),
                             ],
@@ -276,12 +278,12 @@ def perfil_view(page: ft.Page) -> ft.Control:
 
     # Preferencias
     theme_dd = ft.Dropdown(
-        label="Tema", value=prefs.get("theme", "light"),
-        options=[ft.dropdown.Option("light", "Claro"), ft.dropdown.Option("dark", "Oscuro")],
+        label=tr("Tema"), value=prefs.get("theme", "light"),
+        options=[ft.dropdown.Option("light", tr("Claro")), ft.dropdown.Option("dark", tr("Oscuro"))],
         border_color=t.DIVIDER, focused_border_color=t.TEAL,
     )
     lang_dd = ft.Dropdown(
-        label="Idioma", value=prefs.get("language", "es"),
+        label=tr("Idioma"), value=prefs.get("language", "es"),
         options=[
             ft.dropdown.Option("es", "Español"),
             ft.dropdown.Option("en", "English"),
@@ -298,8 +300,17 @@ def perfil_view(page: ft.Page) -> ft.Control:
                 language=lang_dd.value,
                 notifications_enabled=notif_sw.value,
             )
+            cambio_tema = (theme_dd.value or "light") != t.MODE
+            cambio_idioma = ("en" if lang_dd.value == "en" else "es") != i18n.LANG
             page.theme_mode = ft.ThemeMode.DARK if theme_dd.value == "dark" else ft.ThemeMode.LIGHT
-            pref_status.value = "Guardado ✓"
+            if cambio_tema or cambio_idioma:
+                t.set_mode(theme_dd.value)
+                set_lang(lang_dd.value)
+                page.bgcolor = t.BG
+                if hasattr(page, "rebuild_home"):
+                    page.rebuild_home()   # repinta toda la app con paleta/idioma nuevos
+                    return
+            pref_status.value = tr("Guardado ✓")
             pref_status.color = t.GOOD
         except Exception as ex:
             pref_status.value = f"Error: {ex}"
@@ -316,7 +327,7 @@ def perfil_view(page: ft.Page) -> ft.Control:
 
     return ft.Column(
         [
-            section_header("Perfil", "Tu cuenta"),
+            section_header(tr("Perfil"), tr("Tu cuenta")),
             ft.Container(height=10),
 
             # Card usuario
@@ -346,10 +357,10 @@ def perfil_view(page: ft.Page) -> ft.Control:
             card(
                 ft.Column(
                     [
-                        card_label("Preferencias"),
+                        card_label(tr("Preferencias")),
                         ft.Container(height=8),
                         ft.Row(
-                            [ft.Text("Notificaciones", size=13, color=t.TEXT_DARK, expand=True), notif_sw],
+                            [ft.Text(tr("Notificaciones"), size=13, color=t.TEXT_DARK, expand=True), notif_sw],
                             vertical_alignment=ft.CrossAxisAlignment.CENTER,
                         ),
                         divider(),
@@ -358,9 +369,9 @@ def perfil_view(page: ft.Page) -> ft.Control:
                         lang_dd,
                         ft.Container(height=4),
                         ft.FilledButton(
-                            "Guardar preferencias",
+                            tr("Guardar preferencias"),
                             on_click=save_prefs,
-                            style=ft.ButtonStyle(bgcolor=t.TEAL, color=t.CARD),
+                            style=ft.ButtonStyle(bgcolor=t.TEAL, color=t.ON_COLOR),
                         ),
                         pref_status,
                     ],
@@ -374,12 +385,12 @@ def perfil_view(page: ft.Page) -> ft.Control:
                     [
                         ft.Column(
                             [
-                                ft.Text("Sesión", size=13, color=t.TEXT_MUTED),
-                                ft.Text("Salir de la cuenta", size=14, color=t.TEXT_DARK, weight=ft.FontWeight.W_500),
+                                ft.Text(tr("Sesión"), size=13, color=t.TEXT_MUTED),
+                                ft.Text(tr("Salir de la cuenta"), size=14, color=t.TEXT_DARK, weight=ft.FontWeight.W_500),
                             ],
                             spacing=2, expand=True,
                         ),
-                        ft.OutlinedButton("Salir", icon=ft.icons.LOGOUT, on_click=logout, style=ft.ButtonStyle(color=t.NAVY)),
+                        ft.OutlinedButton(tr("Salir"), icon=ft.icons.LOGOUT, on_click=logout, style=ft.ButtonStyle(color=t.NAVY)),
                     ],
                     vertical_alignment=ft.CrossAxisAlignment.CENTER,
                 )
@@ -390,4 +401,4 @@ def perfil_view(page: ft.Page) -> ft.Control:
         spacing=12,
         scroll=ft.ScrollMode.AUTO,
         expand=True,
-    )
+    )  

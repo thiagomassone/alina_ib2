@@ -5,11 +5,23 @@ import threading
 import time
 import flet as ft
 import theme as t
+from i18n import tr
 from .components import card, card_label, dot, pill, divider, section_header
 from .racha import RachaBadge
 
 
 # ─── Panel de dispositivo (BottomSheet) ──────────────────────────────────────
+
+def _bat_disp(pct: int | None):
+    """(icono, color, texto) para un nivel de batería. Reusado en tarjeta y sheet."""
+    if pct is None:
+        return ft.icons.BATTERY_UNKNOWN, t.TEXT_LIGHT, "—"
+    if pct > 60:
+        return ft.icons.BATTERY_FULL, t.GOOD, f"{pct}%"
+    if pct > 20:
+        return ft.icons.BATTERY_4_BAR, t.NEUTRAL, f"{pct}%"
+    return ft.icons.BATTERY_1_BAR, t.BAD, f"{pct}%"
+
 
 def _build_device_sheet(page: ft.Page, device_name_text: ft.Text, card_name_text: ft.Text, haptic_init: int = 1000, battery_pct: int | None = None) -> ft.BottomSheet:
     """
@@ -33,14 +45,14 @@ def _build_device_sheet(page: ft.Page, device_name_text: ft.Text, card_name_text
         icon=ft.icons.EDIT_OUTLINED,
         icon_color=t.TEXT_MUTED,
         icon_size=16,
-        tooltip="Editar nombre",
+        tooltip=tr("Editar nombre"),
         style=ft.ButtonStyle(padding=4),
     )
     confirm_btn = ft.IconButton(
         icon=ft.icons.CHECK_CIRCLE,
         icon_color=t.TEAL,
         icon_size=18,
-        tooltip="Guardar",
+        tooltip=tr("Guardar"),
         visible=False,
         style=ft.ButtonStyle(padding=4),
     )
@@ -82,8 +94,8 @@ def _build_device_sheet(page: ft.Page, device_name_text: ft.Text, card_name_text
 
     # ── IP del dispositivo ────────────────────────────────────────────────────
     ip_field = ft.TextField(
-        label="Dirección del dispositivo",
-        hint_text="alina.local o IP manual",
+        label=tr("Dirección del dispositivo"),
+        hint_text=tr("alina.local o IP manual"),
         value=getattr(page, "esp_ip", "alina.local"),
         border_color=t.DIVIDER,
         focused_border_color=t.TEAL,
@@ -121,11 +133,11 @@ def _build_device_sheet(page: ft.Page, device_name_text: ft.Text, card_name_text
         ws_local = page.ws_client
 
         def _on_connected():
-            conn_status_text.value = "Conectado"
+            conn_status_text.value = tr("Conectado")
             conn_status_text.color = t.GOOD
             if conn_dot_ref.current:
                 conn_dot_ref.current.color = t.GOOD
-            status_text.value = "Conectado"
+            status_text.value = tr("Conectado")
             status_text.color = t.GOOD
             if status_dot_ref.current:
                 status_dot_ref.current.bgcolor = t.GOOD
@@ -133,11 +145,11 @@ def _build_device_sheet(page: ft.Page, device_name_text: ft.Text, card_name_text
             page.update()
 
         def _on_disconnected():
-            conn_status_text.value = "Desconectado"
+            conn_status_text.value = tr("Desconectado")
             conn_status_text.color = t.BAD
             if conn_dot_ref.current:
                 conn_dot_ref.current.color = t.BAD
-            status_text.value = "Desconectado"
+            status_text.value = tr("Desconectado")
             status_text.color = t.BAD
             if status_dot_ref.current:
                 status_dot_ref.current.bgcolor = t.BAD
@@ -151,7 +163,7 @@ def _build_device_sheet(page: ft.Page, device_name_text: ft.Text, card_name_text
         ws_local.add_listener("disconnect", _on_disconnected, owner="resumen_sheet_conn")
 
         ws_local.connect(ip)
-        conn_status_text.value = "Conectando..."
+        conn_status_text.value = tr("Conectando...")
         conn_status_text.color = t.NEUTRAL
         page.update()
 
@@ -193,10 +205,9 @@ def _build_device_sheet(page: ft.Page, device_name_text: ft.Text, card_name_text
         weight=ft.FontWeight.W_500,
     )
     status_dot_ref = ft.Ref[ft.Container]()
-    battery_text = ft.Text(
-        f"{battery_pct}%" if battery_pct is not None else "—",
-        size=13, color=t.TEXT_DARK, weight=ft.FontWeight.W_700,
-    )
+    _bi, _bc, _bstr = _bat_disp(battery_pct)
+    battery_text = ft.Text(_bstr, size=13, color=t.TEXT_DARK, weight=ft.FontWeight.W_700)
+    battery_icon = ft.Icon(_bi, color=_bc, size=18)
 
     # ── Mensajes inline dentro del sheet ──────────────────────────────────────
     # page.snack_bar / show_snack (page.overlay) quedan TAPADOS por este mismo
@@ -276,7 +287,7 @@ def _build_device_sheet(page: ft.Page, device_name_text: ft.Text, card_name_text
     # se actualizaba si te conectabas con la hoja ya abierta. Ahora quedan
     # como variables para poder tocarlos desde _set_connected_ui().
     test_btn = ft.OutlinedButton(
-        "Probar",
+        tr("Probar"),
         icon=ft.icons.VIBRATION,
         on_click=test_vibration,
         disabled=not is_connected,
@@ -288,30 +299,30 @@ def _build_device_sheet(page: ft.Page, device_name_text: ft.Text, card_name_text
         expand=True,
     )
     apply_btn = ft.FilledButton(
-        "Aplicar",
+        tr("Aplicar"),
         icon=ft.icons.CHECK,
         on_click=apply_duration,
         disabled=not is_connected,
         style=ft.ButtonStyle(
             bgcolor=t.NAVY if is_connected else t.DIVIDER,
-            color=t.CARD,
+            color=t.ON_COLOR,
         ),
         expand=True,
     )
     calibrate_btn = ft.FilledButton(
-        "Calibrar equipo",
+        tr("Calibrar equipo"),
         icon=ft.icons.TUNE,
         on_click=calibrate,
         disabled=not is_connected,
         style=ft.ButtonStyle(
             bgcolor=t.TEAL if is_connected else t.DIVIDER,
-            color=t.CARD,
+            color=t.ON_COLOR,
         ),
         width=float("inf"),
     )
     power_icon = ft.Icon(ft.icons.POWER_SETTINGS_NEW,
                          color=t.BAD if is_connected else t.TEXT_LIGHT, size=18)
-    power_label = ft.Text("Apagar dispositivo", size=14,
+    power_label = ft.Text(tr("Apagar dispositivo"), size=14,
                           color=t.BAD if is_connected else t.TEXT_LIGHT,
                           weight=ft.FontWeight.W_500)
     power_btn = ft.OutlinedButton(
@@ -340,10 +351,10 @@ def _build_device_sheet(page: ft.Page, device_name_text: ft.Text, card_name_text
         )
 
         apply_btn.disabled = not connected
-        apply_btn.style = ft.ButtonStyle(bgcolor=t.NAVY if connected else t.DIVIDER, color=t.CARD)
+        apply_btn.style = ft.ButtonStyle(bgcolor=t.NAVY if connected else t.DIVIDER, color=t.ON_COLOR)
 
         calibrate_btn.disabled = not connected
-        calibrate_btn.style = ft.ButtonStyle(bgcolor=t.TEAL if connected else t.DIVIDER, color=t.CARD)
+        calibrate_btn.style = ft.ButtonStyle(bgcolor=t.TEAL if connected else t.DIVIDER, color=t.ON_COLOR)
 
         power_btn.disabled = not connected
         power_btn.style = ft.ButtonStyle(
@@ -366,7 +377,7 @@ def _build_device_sheet(page: ft.Page, device_name_text: ft.Text, card_name_text
                         [
                             ft.Container(
                                 content=ft.Icon(ft.icons.SENSORS, color=t.NAVY, size=26),
-                                width=48, height=48, bgcolor="#EEF2F7",
+                                width=48, height=48, bgcolor=t.DIVIDER,
                                 border_radius=12, alignment=ft.alignment.center,
                             ),
                             ft.Column(
@@ -385,7 +396,7 @@ def _build_device_sheet(page: ft.Page, device_name_text: ft.Text, card_name_text
                                 spacing=2, expand=True,
                             ),
                             ft.Row(
-                                [ft.Icon(ft.icons.BATTERY_FULL, color=t.GOOD, size=18), battery_text],
+                                [battery_icon, battery_text],
                                 spacing=4,
                             ),
                         ],
@@ -396,13 +407,13 @@ def _build_device_sheet(page: ft.Page, device_name_text: ft.Text, card_name_text
                     divider(),
 
                     # ── Conexión ──────────────────────────────────────────────
-                    ft.Text("Conexión", size=12, color=t.TEXT_MUTED, weight=ft.FontWeight.W_600),
+                    ft.Text(tr("Conexión"), size=12, color=t.TEXT_MUTED, weight=ft.FontWeight.W_600),
                     ft.Row(
                         [ip_field, ft.FilledButton(
-                            "Conectar",
+                            tr("Conectar"),
                             icon=ft.icons.WIFI,
                             on_click=connect_esp,
-                            style=ft.ButtonStyle(bgcolor=t.TEAL, color=t.CARD),
+                            style=ft.ButtonStyle(bgcolor=t.TEAL, color=t.ON_COLOR),
                         )],
                         spacing=8,
                         vertical_alignment=ft.CrossAxisAlignment.CENTER,
@@ -419,7 +430,7 @@ def _build_device_sheet(page: ft.Page, device_name_text: ft.Text, card_name_text
                     # ── Duración de vibración ─────────────────────────────────
                     ft.Row(
                         [
-                            ft.Text("Duración de la vibración", size=12, color=t.TEXT_MUTED, weight=ft.FontWeight.W_600),
+                            ft.Text(tr("Duración de la vibración"), size=12, color=t.TEXT_MUTED, weight=ft.FontWeight.W_600),
                             vib_msg_text,
                         ],
                         alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
@@ -442,7 +453,7 @@ def _build_device_sheet(page: ft.Page, device_name_text: ft.Text, card_name_text
                     divider(),
 
                     # ── Controles del equipo ───────────────────────────────────
-                    ft.Text("Controles", size=12, color=t.TEXT_MUTED, weight=ft.FontWeight.W_600),
+                    ft.Text(tr("Controles"), size=12, color=t.TEXT_MUTED, weight=ft.FontWeight.W_600),
                     calibrate_btn,
                     calib_msg_text,
                     ft.Container(height=2),
@@ -454,6 +465,8 @@ def _build_device_sheet(page: ft.Page, device_name_text: ft.Text, card_name_text
             ),
         ),
     )
+    sheet._bat_text = battery_text   # para actualizar la batería del sheet en vivo
+    sheet._bat_icon = battery_icon
     return sheet
 
 
@@ -503,13 +516,13 @@ def _device_card(on_tap, name_text: ft.Text, battery_pct: int | None, calibrated
                 [
                     ft.Container(
                         content=ft.Icon(ft.icons.SENSORS, color=t.NAVY, size=28),
-                        width=52, height=52, bgcolor="#EEF2F7",
+                        width=52, height=52, bgcolor=t.DIVIDER,
                         border_radius=12, alignment=ft.alignment.center,
                     ),
                     ft.Column(
                         [
                             name_text,
-                            ft.Row([dot(status_dot_c, 8), ft.Text(status_label, size=12, color=status_color, weight=ft.FontWeight.W_500)], spacing=6),
+                            ft.Row([dot(status_dot_c, 8), ft.Text(tr(status_label), size=12, color=status_color, weight=ft.FontWeight.W_500)], spacing=6),
                         ],
                         spacing=4, expand=True,
                     ),
@@ -522,7 +535,7 @@ def _device_card(on_tap, name_text: ft.Text, battery_pct: int | None, calibrated
                                 ],
                                 spacing=4, alignment=ft.MainAxisAlignment.END,
                             ),
-                            ft.Text("Batería", size=10, color=t.TEXT_MUTED),
+                            ft.Text(tr("Batería"), size=10, color=t.TEXT_MUTED),
                         ],
                         spacing=2, horizontal_alignment=ft.CrossAxisAlignment.END,
                     ),
@@ -540,7 +553,7 @@ def _score_card(score: int | None) -> ft.Control:
         return card(
             ft.Column(
                 [
-                    card_label("Puntuación postural"),
+                    card_label(tr("Puntuación postural")),
                     ft.Container(height=8),
                     ft.Row(
                         [
@@ -569,7 +582,7 @@ def _score_card(score: int | None) -> ft.Control:
         return card(
         ft.Column(
             [
-                card_label("Puntuación postural"),
+                card_label(tr("Puntuación postural")),
                 ft.Container(height=4),
                 ft.Row(
                     [
@@ -586,7 +599,7 @@ def _score_card(score: int | None) -> ft.Control:
                                     vertical_alignment=ft.CrossAxisAlignment.END,
                                     spacing=4,
                                 ),
-                                pill(label, label_color),
+                                pill(tr(label), label_color),
                             ],
                             spacing=10, expand=True,
                         ),
@@ -605,7 +618,7 @@ def _score_card(score: int | None) -> ft.Control:
                                     content=ft.Column(
                                         [
                                             ft.Text(f"{score}%", size=18, weight=ft.FontWeight.W_700, color=t.NAVY),
-                                            ft.Text("Tu puntuación\ngeneral", size=9, color=t.TEXT_MUTED, text_align=ft.TextAlign.CENTER),
+                                            ft.Text(tr("Tu puntuación\ngeneral"), size=9, color=t.TEXT_MUTED, text_align=ft.TextAlign.CENTER),
                                         ],
                                         spacing=0,
                                         horizontal_alignment=ft.CrossAxisAlignment.CENTER,
@@ -667,7 +680,7 @@ def _daily_summary_card(min_buena: float, min_mala: float) -> ft.Control:
     return card(
         ft.Column(
             [
-                card_label("Resumen diario"),
+                card_label(tr("Resumen diario")),
                 ft.Container(height=6),
                 _legend_row(t.GOOD, "Buena postura", _fmt_min(min_buena)),
                 _legend_row(t.BAD,  "Mala postura",  _fmt_min(min_mala)),
@@ -698,7 +711,8 @@ def resumen_view(page: ft.Page) -> ft.Control:
                 "battery":   ds.get("battery_pct"),
                 "haptic":    ds.get("haptic_intensity", 60),
                 "calibrated":ds.get("calibrated", False),
-                "connected": connected,
+                # conexión: real (WebSocket) o inyectada por backend para la demo
+                "connected": connected or bool(ds.get("connected")),
             }
         except Exception:
             return {"name": "ALINA Dispositivo", "battery": None, "haptic": 60, "calibrated": False, "connected": connected}
@@ -806,10 +820,17 @@ def resumen_view(page: ft.Page) -> ft.Control:
         def _on_ws_status(data: dict):
             from datetime import datetime
             cal = bool(data.get("calibrated", False))
+            # Batería: el ESP manda 'battery' (0-100; <0 o ausente = sin fuel gauge)
+            raw_bat = data.get("battery")
+            bat = int(round(raw_bat)) if isinstance(raw_bat, (int, float)) and raw_bat >= 0 else None
+            if bat is not None:
+                dev["battery"] = bat
             try:
                 payload = {"calibrated": cal}
                 if cal:
                     payload["last_calibration_at"] = datetime.now().isoformat(timespec="seconds")
+                if bat is not None:
+                    payload["battery_pct"] = bat
                 page.api.update_device_status(**payload)
             except Exception:
                 pass
@@ -820,6 +841,14 @@ def resumen_view(page: ft.Page) -> ft.Control:
                 calibrated=cal,
                 connected=ws.connected,
             )
+            try:
+                if getattr(device_sheet, "_bat_text", None):
+                    _i, _c, _s = _bat_disp(dev.get("battery"))
+                    device_sheet._bat_icon.name = _i
+                    device_sheet._bat_icon.color = _c
+                    device_sheet._bat_text.value = _s
+            except Exception:
+                pass
             try:
                 page.update()
             except Exception:
@@ -845,6 +874,15 @@ def resumen_view(page: ft.Page) -> ft.Control:
             calibrated=new_dev["calibrated"],
             connected=new_dev["connected"],
         )
+        # Batería del sheet (subtab) — si está abierto/armado, actualizar en vivo
+        try:
+            if getattr(device_sheet, "_bat_text", None):
+                _i, _c, _s = _bat_disp(new_dev["battery"])
+                device_sheet._bat_icon.name = _i
+                device_sheet._bat_icon.color = _c
+                device_sheet._bat_text.value = _s
+        except Exception:
+            pass
 
         # Actualizar score
         score_card_ref.current.content = _score_card(score=new_score)
@@ -911,7 +949,7 @@ def resumen_view(page: ft.Page) -> ft.Control:
     # ── Construir UI ──────────────────────────────────────────────────────────
     col = ft.Column(
         [
-            section_header(f"Hola, {username}", "Resumen de hoy", badge=racha_badge.control),
+            section_header(tr("Hola, {name}").format(name=username), tr("Resumen de hoy"), badge=racha_badge.control),
             ft.Container(height=10),
             ft.Container(
                 ref=device_card_ref,
@@ -932,19 +970,19 @@ def resumen_view(page: ft.Page) -> ft.Control:
                     ft.Container(
                         expand=True,
                         content=card(ft.Column([
-                            card_label("Tiempo hoy"),
+                            card_label(tr("Tiempo hoy")),
                             ft.Container(height=2),
                             ft.Text(ref=tiempo_ref, value=today["tiempo"], size=24, weight=ft.FontWeight.W_700, color=t.TEXT_DARK),
-                            ft.Text("activos", size=11, color=t.TEXT_LIGHT),
+                            ft.Text(tr("activos"), size=11, color=t.TEXT_LIGHT),
                         ], spacing=2), padding=14),
                     ),
                     ft.Container(
                         expand=True,
                         content=card(ft.Column([
-                            card_label("Alertas"),
+                            card_label(tr("Alertas")),
                             ft.Container(height=2),
                             ft.Text(ref=alertas_ref, value=str(today["alertas"]), size=24, weight=ft.FontWeight.W_700, color=t.TEXT_DARK),
-                            ft.Text("hoy", size=11, color=t.TEXT_LIGHT),
+                            ft.Text(tr("hoy"), size=11, color=t.TEXT_LIGHT),
                         ], spacing=2), padding=14),
                     ),
                 ],
@@ -952,18 +990,18 @@ def resumen_view(page: ft.Page) -> ft.Control:
             ),
             card(
                 ft.Column([
-                    card_label("Resumen diario"),
+                    card_label(tr("Resumen diario")),
                     ft.Container(height=6),
                     ft.Row(
                         [
-                            ft.Row([dot(t.GOOD), ft.Text("Buena postura", size=13, color=t.TEXT_DARK)], spacing=8),
+                            ft.Row([dot(t.GOOD), ft.Text(tr("Buena postura"), size=13, color=t.TEXT_DARK)], spacing=8),
                             ft.Text(ref=min_buena_ref, value=_fmt_min(today["min_buena"]), size=13, color=t.TEXT_MUTED, weight=ft.FontWeight.W_500),
                         ],
                         alignment=ft.MainAxisAlignment.SPACE_BETWEEN,
                     ),
                     ft.Row(
                         [
-                            ft.Row([dot(t.BAD), ft.Text("Mala postura", size=13, color=t.TEXT_DARK)], spacing=8),
+                            ft.Row([dot(t.BAD), ft.Text(tr("Mala postura"), size=13, color=t.TEXT_DARK)], spacing=8),
                             ft.Text(ref=min_mala_ref, value=_fmt_min(today["min_mala"]), size=13, color=t.TEXT_MUTED, weight=ft.FontWeight.W_500),
                         ],
                         alignment=ft.MainAxisAlignment.SPACE_BETWEEN,

@@ -5,6 +5,7 @@ from __future__ import annotations
 import flet as ft
 import httpx
 import theme as t
+from i18n import tr
 from .components import alina_logo_mark
 
 
@@ -34,7 +35,7 @@ def login_view(page: ft.Page, on_success) -> ft.View:
             page.api.login(email_f.value.strip(), password_f.value)
             on_success()
         except httpx.HTTPStatusError as e:
-            error.value = "Email o contraseña incorrectos" if e.response.status_code == 401 else str(e)
+            error.value = tr("Email o contraseña incorrectos") if e.response.status_code == 401 else str(e)
             page.update()
         except Exception as e:
             error.value = f"Error de conexión: {e}"
@@ -56,7 +57,7 @@ def login_view(page: ft.Page, on_success) -> ft.View:
                                 [
                                     alina_logo_mark(size=64),
                                     ft.Text("ALINA", size=28, weight=ft.FontWeight.W_700, color=t.NAVY),
-                                    ft.Text("Monitoreo postural", size=13, color=t.TEXT_MUTED),
+                                    ft.Text(tr("Monitoreo postural"), size=13, color=t.TEXT_MUTED),
                                 ],
                                 horizontal_alignment=ft.CrossAxisAlignment.CENTER,
                                 spacing=4,
@@ -67,7 +68,7 @@ def login_view(page: ft.Page, on_success) -> ft.View:
                         ft.Container(
                             content=ft.Column(
                                 [
-                                    ft.Text("Iniciar sesión", size=20, weight=ft.FontWeight.W_700, color=t.TEXT_DARK),
+                                    ft.Text(tr("Iniciar sesión"), size=20, weight=ft.FontWeight.W_700, color=t.TEXT_DARK),
                                     ft.Container(height=8),
                                     email_f,
                                     password_f,
@@ -77,7 +78,7 @@ def login_view(page: ft.Page, on_success) -> ft.View:
                                         "Ingresar",
                                         on_click=do_login,
                                         width=320,
-                                        style=ft.ButtonStyle(bgcolor=t.TEAL, color=t.CARD),
+                                        style=ft.ButtonStyle(bgcolor=t.TEAL, color=t.ON_COLOR),
                                     ),
                                     ft.TextButton(
                                         "¿No tenés cuenta? Registrate",
@@ -117,23 +118,23 @@ def register_view(page: ft.Page) -> ft.View:
     def do_register(_=None):
         error.value = ""
         if not nombre_f.value.strip():
-            error.value = "El nombre es obligatorio"
+            error.value = tr("El nombre es obligatorio")
             page.update()
             return
         if not apellido_f.value.strip():
-            error.value = "El apellido es obligatorio"
+            error.value = tr("El apellido es obligatorio")
             page.update()
             return
         if not email_f.value.strip():
-            error.value = "El email es obligatorio"
+            error.value = tr("El email es obligatorio")
             page.update()
             return
         if len(password_f.value) < 8:
-            error.value = "La contraseña debe tener al menos 8 caracteres"
+            error.value = tr("La contraseña debe tener al menos 8 caracteres")
             page.update()
             return
         if password_f.value != confirm_f.value:
-            error.value = "Las contraseñas no coinciden"
+            error.value = tr("Las contraseñas no coinciden")
             page.update()
             return
         try:
@@ -168,8 +169,8 @@ def register_view(page: ft.Page) -> ft.View:
                         ft.Container(
                             content=ft.Column(
                                 [
-                                    ft.Text("Crear cuenta", size=20, weight=ft.FontWeight.W_700, color=t.TEXT_DARK),
-                                    ft.Text("Completá tus datos para comenzar", size=13, color=t.TEXT_MUTED),
+                                    ft.Text(tr("Crear cuenta"), size=20, weight=ft.FontWeight.W_700, color=t.TEXT_DARK),
+                                    ft.Text(tr("Completá tus datos para comenzar"), size=13, color=t.TEXT_MUTED),
                                     ft.Container(height=8),
                                     ft.Row([
                                         ft.Container(content=nombre_f,   expand=True),
@@ -184,7 +185,7 @@ def register_view(page: ft.Page) -> ft.View:
                                         "Crear cuenta",
                                         on_click=do_register,
                                         width=320,
-                                        style=ft.ButtonStyle(bgcolor=t.TEAL, color=t.CARD),
+                                        style=ft.ButtonStyle(bgcolor=t.TEAL, color=t.ON_COLOR),
                                     ),
                                     ft.TextButton(
                                         "¿Ya tenés cuenta? Iniciá sesión",

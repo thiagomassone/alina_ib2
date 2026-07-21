@@ -21,6 +21,7 @@ from datetime import datetime, date, timedelta
 
 import flet as ft
 import theme as t
+from i18n import tr
 from .components import card, card_label, section_header, dot
 
 _DIAS = ["Lun", "Mar", "Mié", "Jue", "Vie", "Sáb", "Dom"]
@@ -91,7 +92,7 @@ def _tendencia_card(sessions: list[dict]) -> ft.Control:
 
     if len(puntos) < 2:
         chart = ft.Container(
-            content=ft.Text("Necesitás sesiones en al menos 2 días de esta semana.",
+            content=ft.Text(tr("Necesitás sesiones en al menos 2 días de esta semana."),
                             size=12, color=t.TEXT_MUTED, text_align=ft.TextAlign.CENTER),
             alignment=ft.alignment.center, height=170,
         )
@@ -122,8 +123,8 @@ def _tendencia_card(sessions: list[dict]) -> ft.Control:
             ),
             height=180,
         )
-    return card(ft.Column([card_label("Tendencia semanal"),
-                           ft.Text("Score promedio por día", size=11, color=t.TEXT_LIGHT),
+    return card(ft.Column([card_label(tr("Tendencia semanal")),
+                           ft.Text(tr("Score promedio por día"), size=11, color=t.TEXT_LIGHT),
                            ft.Container(height=6), chart], spacing=2))
 
 
@@ -143,7 +144,7 @@ def _comparativa_card(sessions: list[dict]) -> ft.Control:
         _cmp_row("Alertas por min", act["apm"], prev["apm"], lambda v: f"{v:.2f}", higher_better=False),
     ]
     return card(ft.Column([
-        card_label("Semana vs semana pasada"),
+        card_label(tr("Semana vs semana pasada")),
         ft.Container(height=8),
         ft.Column(filas, spacing=12),
     ], spacing=2))
@@ -152,7 +153,7 @@ def _comparativa_card(sessions: list[dict]) -> ft.Control:
 def _cmp_row(label, cur, prev, fmt, higher_better: bool) -> ft.Control:
     val_txt = fmt(cur) if cur is not None else "—"
     if cur is None or prev is None or prev == 0:
-        delta_ctrl = ft.Text("sin comparación", size=11, color=t.TEXT_LIGHT)
+        delta_ctrl = ft.Text(tr("sin comparación"), size=11, color=t.TEXT_LIGHT)
     else:
         pct = (cur - prev) / prev * 100
         subio = cur > prev
@@ -165,7 +166,7 @@ def _cmp_row(label, cur, prev, fmt, higher_better: bool) -> ft.Control:
             spacing=2, tight=True,
         )
     return ft.Row(
-        [ft.Text(label, size=13, color=t.TEXT_MUTED, expand=True),
+        [ft.Text(tr(label), size=13, color=t.TEXT_MUTED, expand=True),
          ft.Text(val_txt, size=15, weight=ft.FontWeight.W_700, color=t.TEXT_DARK),
          ft.Container(width=8), delta_ctrl],
         vertical_alignment=ft.CrossAxisAlignment.CENTER,
@@ -182,7 +183,7 @@ def _distribucion_card(sessions: list[dict]) -> ft.Control:
 
     if total <= 0:
         body = ft.Container(
-            content=ft.Text("Todavía no hay minutos registrados.", size=12, color=t.TEXT_MUTED),
+            content=ft.Text(tr("Todavía no hay minutos registrados."), size=12, color=t.TEXT_MUTED),
             alignment=ft.alignment.center, height=140,
         )
     else:
@@ -206,14 +207,14 @@ def _distribucion_card(sessions: list[dict]) -> ft.Control:
              ft.Container(content=leyenda, expand=True)],
             vertical_alignment=ft.CrossAxisAlignment.CENTER,
         )
-    return card(ft.Column([card_label("Distribución por calidad postural"),
-                           ft.Text("Porcentaje del tiempo en cada estado", size=11, color=t.TEXT_LIGHT),
+    return card(ft.Column([card_label(tr("Distribución por calidad postural")),
+                           ft.Text(tr("Porcentaje del tiempo en cada estado"), size=11, color=t.TEXT_LIGHT),
                            ft.Container(height=10), body], spacing=2))
 
 
 def _leg_row(color: str, label: str, pct: float) -> ft.Control:
     return ft.Row(
-        [dot(color, 10), ft.Text(label, size=13, color=t.TEXT_DARK, expand=True),
+        [dot(color, 10), ft.Text(tr(label), size=13, color=t.TEXT_DARK, expand=True),
          ft.Text(f"{pct:.0f}%", size=13, weight=ft.FontWeight.W_700, color=t.TEXT_MUTED)],
         vertical_alignment=ft.CrossAxisAlignment.CENTER,
     )
@@ -238,7 +239,7 @@ def _densidad_card(sessions: list[dict]) -> ft.Control:
 
     if len(puntos) < 2:
         body = ft.Container(
-            content=ft.Text("Necesitás sesiones en al menos 2 días.", size=12, color=t.TEXT_MUTED),
+            content=ft.Text(tr("Necesitás sesiones en al menos 2 días."), size=12, color=t.TEXT_MUTED),
             alignment=ft.alignment.center, height=160,
         )
     else:
@@ -264,8 +265,8 @@ def _densidad_card(sessions: list[dict]) -> ft.Control:
             ),
             height=170,
         )
-    return card(ft.Column([card_label("Densidad de alertas"),
-                           ft.Text("Alertas por minuto · menos es mejor", size=11, color=t.TEXT_LIGHT),
+    return card(ft.Column([card_label(tr("Densidad de alertas")),
+                           ft.Text(tr("Alertas por minuto · menos es mejor"), size=11, color=t.TEXT_LIGHT),
                            ft.Container(height=6), body], spacing=2))
 
 
@@ -278,7 +279,7 @@ def _records_card(sessions: list[dict], record_racha: int) -> ft.Control:
         _tile(f"{int(mas_larga)} min", "Sesión más larga"),
         _tile(f"{record_racha}", "Racha más larga"),
     ], spacing=10)
-    return card(ft.Column([card_label("Récords"), ft.Container(height=10), tiles], spacing=2))
+    return card(ft.Column([card_label(tr("Récords")), ft.Container(height=10), tiles], spacing=2))
 
 
 def _tile(value: str, label: str) -> ft.Control:
@@ -286,7 +287,7 @@ def _tile(value: str, label: str) -> ft.Control:
         expand=True, bgcolor=t.BG, border_radius=12, padding=14,
         content=ft.Column([
             ft.Text(value, size=22, weight=ft.FontWeight.W_700, color=t.TEXT_DARK),
-            ft.Text(label, size=11, color=t.TEXT_LIGHT),
+            ft.Text(tr(label), size=11, color=t.TEXT_LIGHT),
         ], spacing=2, horizontal_alignment=ft.CrossAxisAlignment.START),
     )
 
@@ -326,18 +327,18 @@ def analisis_view(page: ft.Page) -> ft.Control:
 
     if not sessions:
         return ft.Column([
-            section_header("Análisis", "Tu progreso postural"),
+            section_header(tr("Análisis"), tr("Tu progreso postural")),
             ft.Container(height=40),
             ft.Column([
                 ft.Icon(ft.icons.INSIGHTS, size=48, color=t.TEXT_LIGHT),
                 ft.Container(height=8),
-                ft.Text("Todavía no hay sesiones", size=16, weight=ft.FontWeight.W_600, color=t.TEXT_DARK),
-                ft.Text("Completá tu primera sesión para ver tu análisis.", size=13, color=t.TEXT_MUTED),
+                ft.Text(tr("Todavía no hay sesiones"), size=16, weight=ft.FontWeight.W_600, color=t.TEXT_DARK),
+                ft.Text(tr("Completá tu primera sesión para ver tu análisis."), size=13, color=t.TEXT_MUTED),
             ], horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=2),
         ], expand=True)
 
     bloques = [
-        section_header("Análisis", "Tu progreso postural"),
+        section_header(tr("Análisis"), tr("Tu progreso postural")),
         ft.Container(height=10),
         _tendencia_card(sessions),
         _comparativa_card(sessions),

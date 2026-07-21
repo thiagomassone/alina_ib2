@@ -5,6 +5,7 @@ from datetime import datetime, timedelta, date
 from collections import defaultdict
 import flet as ft
 import theme as t
+from i18n import tr
 from .components import card, card_label, divider, section_header
 
 # ── Mock de fallback (comentado — decidir para la presentación: mock vs datos reales) ──
@@ -59,7 +60,7 @@ def _fmt_min(m: float) -> str:
 def _score_badge(score: int) -> ft.Control:
     color = t.GOOD if score >= 80 else (t.NEUTRAL if score >= 65 else t.BAD)
     return ft.Container(
-        content=ft.Text(str(score), size=13, weight=ft.FontWeight.W_700, color=t.CARD, no_wrap=True),
+        content=ft.Text(str(score), size=13, weight=ft.FontWeight.W_700, color=t.ON_COLOR, no_wrap=True),
         bgcolor=color, border_radius=8,
         padding=ft.padding.symmetric(horizontal=8, vertical=3),
         width=46, alignment=ft.alignment.center,
@@ -74,15 +75,15 @@ def _session_row(session: dict, last: bool = False) -> ft.Control:
             [
                 ft.Row([
                     ft.Icon(ft.icons.CHECK_CIRCLE_OUTLINE, size=13, color=t.GOOD),
-                    ft.Text(f"Buena: {_fmt_min(session['min_buena'])}", size=11, color=t.TEXT_MUTED),
+                    ft.Text(f"{tr('Buena')}: {_fmt_min(session['min_buena'])}", size=11, color=t.TEXT_MUTED),
                 ], spacing=4),
                 ft.Row([
                     ft.Icon(ft.icons.CANCEL_OUTLINED, size=13, color=t.BAD),
-                    ft.Text(f"Mala: {_fmt_min(session['min_mala'])}", size=11, color=t.TEXT_MUTED),
+                    ft.Text(f"{tr('Mala')}: {_fmt_min(session['min_mala'])}", size=11, color=t.TEXT_MUTED),
                 ], spacing=4),
                 ft.Row([
                     ft.Icon(ft.icons.VIBRATION, size=13, color=t.NEUTRAL),
-                    ft.Text(f"Alertas: {session['alertas']}", size=11, color=t.TEXT_MUTED),
+                    ft.Text(f"{tr('Alertas')}: {session['alertas']}", size=11, color=t.TEXT_MUTED),
                 ], spacing=4),
             ],
             spacing=12,
@@ -284,7 +285,7 @@ def _point_color(score: float) -> str:
 def _build_line_chart(points: list[tuple[str, float, float]], period: str = "semana", offset: int = 0) -> ft.Control:
     if not points:
         return ft.Container(
-            content=ft.Text("Sin datos para este período", size=12, color=t.TEXT_MUTED),
+            content=ft.Text(tr("Sin datos para este período"), size=12, color=t.TEXT_MUTED),
             alignment=ft.alignment.center,
             height=140,
         )
@@ -376,7 +377,7 @@ def _period_chip(label: str, selected: bool, on_click) -> ft.Control:
             content=ft.Text(
                 label, size=13,
                 weight=ft.FontWeight.W_600 if selected else ft.FontWeight.W_400,
-                color=t.CARD if selected else t.TEXT_MUTED,
+                color=t.ON_COLOR if selected else t.TEXT_MUTED,
             ),
             bgcolor=t.TEAL if selected else t.CARD,
             border_radius=20,
@@ -451,7 +452,7 @@ def historial_view(page: ft.Page) -> ft.Control:
 
         # Chips — reconstruir con nuevo estado
         chips_row.current.controls = [
-            _period_chip(PERIOD_LABELS[k], k == p, _make_period_handler(k))
+            _period_chip(tr(PERIOD_LABELS[k]), k == p, _make_period_handler(k))
             for k in PERIOD_KEYS
         ]
 
@@ -501,7 +502,7 @@ def historial_view(page: ft.Page) -> ft.Control:
 
     col = ft.Column(
         [
-            section_header("Historial", "Seguimiento de tus sesiones"),
+            section_header(tr("Historial"), tr("Seguimiento de tus sesiones")),
             ft.Container(height=10),
 
             # ── Card del gráfico ──────────────────────────────────────────────
@@ -547,7 +548,7 @@ def historial_view(page: ft.Page) -> ft.Control:
                         ft.Container(height=12),
 
                         # Score + delta
-                        card_label("Puntuación postural"),
+                        card_label(tr("Puntuación postural")),
                         ft.Container(height=4),
                         ft.Row(
                             [
@@ -608,7 +609,7 @@ def historial_view(page: ft.Page) -> ft.Control:
             # ── Card de sesiones recientes ────────────────────────────────────
             card(
                 ft.Column(
-                    [card_label("Sesiones recientes"), ft.Container(height=8)]
+                    [card_label(tr("Sesiones recientes")), ft.Container(height=8)]
                     + session_rows,
                     spacing=0,
                 )
@@ -641,7 +642,7 @@ def historial_view(page: ft.Page) -> ft.Control:
         # Encontrar la card de sesiones recientes (último card antes del Container final)
         # y reemplazar su contenido
         recent_card = col.controls[-2]
-        recent_card.content.controls = [card_label("Sesiones recientes"), ft.Container(height=8)] + new_rows
+        recent_card.content.controls = [card_label(tr("Sesiones recientes")), ft.Container(height=8)] + new_rows
         try:
             page.update()
         except Exception:

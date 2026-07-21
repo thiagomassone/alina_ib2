@@ -4,6 +4,7 @@ from __future__ import annotations
 import threading
 import flet as ft
 import theme as t
+from i18n import tr, set_lang
 from ws_client import ALINAWebSocket
 
 from .resumen_view   import resumen_view
@@ -23,11 +24,19 @@ _TABS = [
 ]
 
 # Tabs que tienen refresh automático (índices)
-_REFRESHABLE_TABS = {0, 1}  # Resumen, En vivo (Análisis sigue siendo placeholder)
+_REFRESHABLE_TABS = {0, 1, 4}  # Resumen, En vivo, Alertas (poll de notificaciones)
 _REFRESH_INTERVAL = 3  # segundos
 
 
 def home_view(page: ft.Page) -> ft.View:
+    # Aplicar tema (claro/oscuro) e idioma según la preferencia del usuario.
+    try:
+        _prefs = page.api.get_preferences()
+    except Exception:
+        _prefs = {}
+    _mode = t.set_mode(_prefs.get("theme", "light"))
+    set_lang(_prefs.get("language", "es"))
+    page.theme_mode = ft.ThemeMode.DARK if _mode == "dark" else ft.ThemeMode.LIGHT
     page.bgcolor = t.BG
 
     # ── WebSocket compartido — se crea UNA sola vez acá, así siempre existe
@@ -176,7 +185,7 @@ def home_view(page: ft.Page) -> ft.View:
 
     # Badge del nav hecho a mano (ícono + puntito rojo) para no depender de la
     # prop `badge` del NavigationBarDestination, que no existe en Flet viejo.
-    _badge_text = ft.Text(str(_n0), size=9, color=t.CARD, weight=ft.FontWeight.W_700)
+    _badge_text = ft.Text(str(_n0), size=9, color=t.ON_COLOR, weight=ft.FontWeight.W_700)
     _badge_cont = ft.Container(
         content=_badge_text,
         bgcolor=t.BAD, border_radius=8,
@@ -198,12 +207,12 @@ def home_view(page: ft.Page) -> ft.View:
         indicator_color=t.TEAL_SOFT,
         on_change=on_nav_change,
         destinations=[
-            ft.NavigationBarDestination(icon=ft.icons.HOME_OUTLINED,             selected_icon=ft.icons.HOME,              label="Resumen"),
-            ft.NavigationBarDestination(icon=ft.icons.ACCESSIBILITY_NEW_OUTLINED, selected_icon=ft.icons.ACCESSIBILITY_NEW, label="En vivo"),
-            ft.NavigationBarDestination(icon=ft.icons.HISTORY,                   label="Historial"),
-            ft.NavigationBarDestination(icon=ft.icons.INSIGHTS_OUTLINED,         selected_icon=ft.icons.INSIGHTS,           label="Análisis"),
-            ft.NavigationBarDestination(icon_content=_alertas_icon, label="Alertas"),
-            ft.NavigationBarDestination(icon=ft.icons.PERSON_OUTLINE,            selected_icon=ft.icons.PERSON,             label="Perfil"),
+            ft.NavigationBarDestination(icon=ft.icons.HOME_OUTLINED,             selected_icon=ft.icons.HOME,              label=tr("Resumen")),
+            ft.NavigationBarDestination(icon=ft.icons.ACCESSIBILITY_NEW_OUTLINED, selected_icon=ft.icons.ACCESSIBILITY_NEW, label=tr("En vivo")),
+            ft.NavigationBarDestination(icon=ft.icons.HISTORY,                   label=tr("Historial")),
+            ft.NavigationBarDestination(icon=ft.icons.INSIGHTS_OUTLINED,         selected_icon=ft.icons.INSIGHTS,           label=tr("Análisis")),
+            ft.NavigationBarDestination(icon_content=_alertas_icon, label=tr("Alertas")),
+            ft.NavigationBarDestination(icon=ft.icons.PERSON_OUTLINE,            selected_icon=ft.icons.PERSON,             label=tr("Perfil")),
         ],
     )
 

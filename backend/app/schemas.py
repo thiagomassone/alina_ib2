@@ -81,6 +81,7 @@ class DeviceStatusOut(BaseModel):
     last_calibration_at: str | None
     battery_pct: int | None
     calibrated: bool
+    connected: bool | None = None   # solo para inyección de demo (no es columna)
 
     model_config = ConfigDict(from_attributes=True)
 

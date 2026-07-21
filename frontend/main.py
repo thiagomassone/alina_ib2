@@ -51,6 +51,13 @@ def main(page: ft.Page):
         page.views.pop()
         page.go(page.views[-1].route if page.views else "/login")
 
+    def rebuild_home():
+        """Reconstruye la app (para que un cambio de tema repinte todo)."""
+        page.views.clear()
+        page.views.append(home_view(page))
+        page.update()
+    page.rebuild_home = rebuild_home
+
     page.on_route_change = route_change
     page.on_view_pop = view_pop
     page.go("/login")

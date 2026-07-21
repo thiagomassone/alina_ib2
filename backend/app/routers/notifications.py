@@ -28,6 +28,7 @@ from ..models import (
     crear_notificacion,
 )
 from ..schemas import NotificationOut
+from ..notif_texts import notif_text, resumen_semanal_msg, user_lang
 from ..security import get_current_user
 from .sessions import _calcular_racha, _dias_con_sesion, _racha_record
 
@@ -63,7 +64,7 @@ def _borrar_tipo(db: DBSession, user_id: int, tipo: str) -> None:
     ).delete(synchronize_session=False)
 
 
-def _texto_resumen_semanal(db: DBSession, user_id: int) -> str | None:
+def _texto_resumen_semanal(db: DBSession, user_id: int, lang: str) -> str | None:
     hoy = date.today()
     rows = db.query(SessionModel).filter(SessionModel.user_id == user_id).all()
 
@@ -75,30 +76,22 @@ def _texto_resumen_semanal(db: DBSession, user_id: int) -> str | None:
     prev = prom(hoy - timedelta(days=13), hoy - timedelta(days=7))
     if act is None:
         return None
-    if prev is None or prev == 0:
-        return f"Esta semana tu score promedio fue {act:.0f}/100. ¡Seguí sumando sesiones!"
-    delta = (act - prev) / prev * 100
-    if delta >= 0:
-        return f"Esta semana mejoraste un {delta:.0f}% (score promedio {act:.0f}/100). ¡Buen trabajo!"
-    return f"Esta semana tu score bajó un {abs(delta):.0f}% ({act:.0f}/100). La próxima repuntás."
+    return resumen_semanal_msg(act, prev, lang)
 
 
 def _sync_estado(db: DBSession, user_id: int) -> None:
     """Purga vencidas y genera/borra las notificaciones de estado."""
     _purgar_vencidas(db, user_id)
     ahora = datetime.utcnow()
+    lang = user_lang(db, user_id)
 
     # Calibración: si el dispositivo está sin calibrar, avisar; si calibra, borrar.
     ds = db.query(DeviceStatus).filter(DeviceStatus.user_id == user_id).first()
     if ds is not None:
         if not ds.calibrated:
             if not _existe(db, user_id, "calibration_pending"):
-                crear_notificacion(
-                    db, user_id, "calibration_pending",
-                    "Dispositivo sin calibrar",
-                    "Tu ALINA no está calibrado. Calibralo antes de tu próxima sesión "
-                    "para que las alertas sean precisas.",
-                )
+                ti, ms = notif_text("calibration_pending", lang)
+                crear_notificacion(db, user_id, "calibration_pending", ti, ms)
         else:
             _borrar_tipo(db, user_id, "calibration_pending")
 
@@ -107,19 +100,16 @@ def _sync_estado(db: DBSession, user_id: int) -> None:
     actual, _ = _calcular_racha(dias)
     if actual > 0 and date.today() not in dias and datetime.now().hour >= 20:
         if not _existe(db, user_id, "racha_en_riesgo", desde=ahora - timedelta(hours=16)):
-            crear_notificacion(
-                db, user_id, "racha_en_riesgo",
-                "Tu racha está en riesgo",
-                f"Todavía no usaste ALINA hoy. Hacé una sesión para no cortar "
-                f"tu racha de {actual} días.",
-            )
+            ti, ms = notif_text("racha_en_riesgo", lang, dias=actual)
+            crear_notificacion(db, user_id, "racha_en_riesgo", ti, ms)
 
     # Resumen semanal: los lunes, 1 por semana.
     if date.today().weekday() == 0:
         if not _existe(db, user_id, "resumen_semanal", desde=ahora - timedelta(days=6)):
-            msg = _texto_resumen_semanal(db, user_id)
+            msg = _texto_resumen_semanal(db, user_id, lang)
             if msg:
-                crear_notificacion(db, user_id, "resumen_semanal", "Tu resumen de la semana", msg)
+                ti, _ = notif_text("resumen_semanal", lang, mensaje=msg)
+                crear_notificacion(db, user_id, "resumen_semanal", ti, msg)
 
     db.commit()
 
@@ -193,11 +183,8 @@ def notify_device_disconnected(
     desde = datetime.utcnow() - timedelta(minutes=_DESCONEXION_DEBOUNCE_MIN)
     if _existe(db, current_user.id, "device_disconnected", desde=desde):
         return {"ok": True, "creada": False}
-    crear_notificacion(
-        db, current_user.id, "device_disconnected",
-        "Dispositivo desconectado",
-        "Se perdió la conexión con tu ALINA. Revisá que esté encendido y en rango.",
-    )
+    ti, ms = notif_text("device_disconnected", user_lang(db, current_user.id))
+    crear_notificacion(db, current_user.id, "device_disconnected", ti, ms)
     return {"ok": True, "creada": True}
 
 
@@ -223,22 +210,16 @@ def debug_crear(
     return crear_notificacion(db, current_user.id, tipo, titulo, mensaje)
 
 
-# Un ejemplo realista de cada tipo, para poblar la lista de una.
-_DEMO_SEED = [
-    ("session_score_low", "Sesión con postura baja",
-     "Tu sesión del 21/07 a las 09:00 (30 min) tuvo un score de 58/100. Intentá mantener la espalda más erguida."),
-    ("buena_sesion", "¡Gran sesión!",
-     "Tu sesión del 21/07 a las 11:00 (30 min) cerró con 92/100. ¡Seguí así!"),
-    ("nuevo_record", "¡Nuevo récord de score!",
-     "Superaste tu mejor marca con 96/100 en tu sesión del 21/07 a las 18:20."),
-    ("racha_en_riesgo", "Tu racha está en riesgo",
-     "Todavía no usaste ALINA hoy. Hacé una sesión para no cortar tu racha de 7 días."),
-    ("resumen_semanal", "Tu resumen de la semana",
-     "Esta semana mejoraste un 12% (score promedio 84/100). ¡Buen trabajo!"),
-    ("device_disconnected", "Dispositivo desconectado",
-     "Se perdió la conexión con tu ALINA. Revisá que esté encendido y en rango."),
-    ("calibration_pending", "Dispositivo sin calibrar",
-     "Tu ALINA no está calibrado. Calibralo antes de tu próxima sesión para que las alertas sean precisas."),
+# Parámetros de ejemplo para poblar un caso de cada tipo (en el idioma del usuario).
+from datetime import datetime as _dt
+
+_SEED_SPECS = [
+    ("session_score_low", "session_score_low", dict(dt=_dt(2026, 7, 21, 9, 0),  dur="30 min", score=58)),
+    ("buena_sesion",      "buena_sesion",      dict(dt=_dt(2026, 7, 21, 11, 0), dur="30 min", score=92)),
+    ("nuevo_record",      "record_score",      dict(dt=_dt(2026, 7, 21, 18, 20), score=96)),
+    ("racha_en_riesgo",   "racha_en_riesgo",   dict(dias=7)),
+    ("device_disconnected","device_disconnected", dict()),
+    ("calibration_pending","calibration_pending", dict()),
 ]
 
 
@@ -249,6 +230,14 @@ def debug_seed(
 ):
     """[DEMO] Crea un ejemplo de cada tipo de notificación (para screenshot)."""
     _require_debug()
-    for tipo, titulo, mensaje in _DEMO_SEED:
-        crear_notificacion(db, current_user.id, tipo, titulo, mensaje)
-    return {"ok": True, "creadas": len(_DEMO_SEED)}
+    lang = user_lang(db, current_user.id)
+    n = 0
+    for tipo, key, params in _SEED_SPECS:
+        ti, ms = notif_text(key, lang, **params)
+        crear_notificacion(db, current_user.id, tipo, ti, ms)
+        n += 1
+    # Resumen semanal con su comparación de ejemplo
+    ti, _ = notif_text("resumen_semanal", lang, mensaje="")
+    crear_notificacion(db, current_user.id, "resumen_semanal", ti, resumen_semanal_msg(84, 75, lang))
+    n += 1
+    return {"ok": True, "creadas": n}

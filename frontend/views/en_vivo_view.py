@@ -6,6 +6,8 @@ import threading
 from datetime import datetime
 import flet as ft
 import theme as t
+import i18n
+from i18n import tr
 from .components import card, card_label, section_header, show_snack
 
 
@@ -127,7 +129,7 @@ def _pulse_ring(cx: int, cy: int, ring_ref: "ft.Ref[ft.Container]") -> ft.Contai
 def _legend_item(color: str, label: str) -> ft.Control:
     return ft.Row(
         [ft.Container(width=10, height=10, bgcolor=color, border_radius=10),
-         ft.Text(label, size=11, color=t.TEXT_MUTED)],
+         ft.Text(tr(label), size=11, color=t.TEXT_MUTED)],
         spacing=6, vertical_alignment=ft.CrossAxisAlignment.CENTER,
     )
 
@@ -150,20 +152,20 @@ def en_vivo_view(page: ft.Page) -> ft.Control:
     t1_pulse_ref  = ft.Ref[ft.Container]()
     t12_pulse_ref = ft.Ref[ft.Container]()
     timer_text  = ft.Text("00:00", size=32, weight=ft.FontWeight.W_700, color=t.TEXT_DARK)
-    status_text = ft.Text("Sin sesión activa", size=13, color=t.TEXT_MUTED)
-    conn_status = ft.Text("Desconectado", size=13, color=t.TEXT_MUTED)
+    status_text = ft.Text(tr("Sin sesión activa"), size=13, color=t.TEXT_MUTED)
+    conn_status = ft.Text(tr("Desconectado"), size=13, color=t.TEXT_MUTED)
 
     start_btn = ft.FilledButton(
-        "Iniciar sesión", icon=ft.icons.PLAY_ARROW,
-        style=ft.ButtonStyle(bgcolor=t.TEAL, color=t.CARD), expand=True,
+        ("Start session" if i18n.LANG == "en" else "Iniciar sesión"), icon=ft.icons.PLAY_ARROW,
+        style=ft.ButtonStyle(bgcolor=t.TEAL, color=t.ON_COLOR), expand=True,
     )
     pause_btn = ft.FilledButton(
-        "Pausar", icon=ft.icons.PAUSE,
-        style=ft.ButtonStyle(bgcolor=t.NEUTRAL, color=t.CARD),
+        tr("Pausar"), icon=ft.icons.PAUSE,
+        style=ft.ButtonStyle(bgcolor=t.NEUTRAL, color=t.ON_COLOR),
         expand=True, visible=False,
     )
     stop_btn = ft.OutlinedButton(
-        "Finalizar", icon=ft.icons.STOP,
+        tr("Finalizar"), icon=ft.icons.STOP,
         style=ft.ButtonStyle(color=t.BAD, side=ft.BorderSide(1, t.BAD),
                              shape=ft.RoundedRectangleBorder(radius=8)),
         expand=True, visible=False,
@@ -278,7 +280,7 @@ def en_vivo_view(page: ft.Page) -> ft.Control:
             ws.start_session()
 
     def _on_ws_connect():
-        conn_status.value = "Conectado"
+        conn_status.value = tr("Conectado")
         conn_status.color = t.GOOD
         try: page.update()
         except: pass
@@ -289,7 +291,7 @@ def en_vivo_view(page: ft.Page) -> ft.Control:
             threading.Thread(target=_resync_sesion, daemon=True).start()
 
     def _on_ws_disconnect():
-        conn_status.value = "Desconectado"
+        conn_status.value = tr("Desconectado")
         conn_status.color = t.BAD
         for k in imu_states:
             imu_states[k] = "desconectado"
@@ -407,13 +409,13 @@ def en_vivo_view(page: ft.Page) -> ft.Control:
     def _on_session_status(data: dict):
         state = data.get("state")
         if state == "running":
-            status_text.value = "Sesión en curso"
+            status_text.value = tr("Sesión en curso")
             status_text.color = t.GOOD
         elif state == "paused":
-            status_text.value = "Sesión pausada"
+            status_text.value = tr("Sesión pausada")
             status_text.color = t.NEUTRAL
         elif state == "idle":
-            status_text.value = "Sin sesión activa"
+            status_text.value = tr("Sin sesión activa")
             status_text.color = t.TEXT_MUTED
         try: page.update()
         except: pass
@@ -437,7 +439,7 @@ def en_vivo_view(page: ft.Page) -> ft.Control:
         ws.add_listener("session_end",    _on_session_end,    owner="en_vivo")
         ws.add_listener("session_status", _on_session_status, owner="en_vivo")
         if ws.connected:
-            conn_status.value = "Conectado"
+            conn_status.value = tr("Conectado")
             conn_status.color = t.GOOD
         # Solo replayar el último status si SEGUIMOS conectados: last_status
         # queda cacheado para siempre, así que sin este guard, cambiar de tab
@@ -476,7 +478,7 @@ def en_vivo_view(page: ft.Page) -> ft.Control:
         start_btn.visible = False
         pause_btn.visible = True
         stop_btn.visible  = True
-        status_text.value = "Sesión en curso"
+        status_text.value = tr("Sesión en curso")
         status_text.color = t.GOOD
         timer_text.value  = "00:00"
         timer_running[0]  = True
@@ -491,13 +493,13 @@ def en_vivo_view(page: ft.Page) -> ft.Control:
     #     if session_paused:
     #         pause_btn.text  = "Reanudar"
     #         pause_btn.icon  = ft.icons.PLAY_ARROW
-    #         pause_btn.style = ft.ButtonStyle(bgcolor=t.GOOD, color=t.CARD)
+    #         pause_btn.style = ft.ButtonStyle(bgcolor=t.GOOD, color=t.ON_COLOR)
     #         if hasattr(page, "ws_client") and page.ws_client and page.ws_client.connected:
     #             page.ws_client.pause_session()
     #     else:
     #         pause_btn.text  = "Pausar"
     #         pause_btn.icon  = ft.icons.PAUSE
-    #         pause_btn.style = ft.ButtonStyle(bgcolor=t.NEUTRAL, color=t.CARD)
+    #         pause_btn.style = ft.ButtonStyle(bgcolor=t.NEUTRAL, color=t.ON_COLOR)
     #         if hasattr(page, "ws_client") and page.ws_client and page.ws_client.connected:
     #             page.ws_client.resume_session()
     #     page.update()
@@ -507,9 +509,9 @@ def en_vivo_view(page: ft.Page) -> ft.Control:
         if page.session_paused:
             # Empieza la pausa: anotar el momento
             page.session_paused_at = datetime.now()
-            pause_btn.text  = "Reanudar"
+            pause_btn.text  = tr("Reanudar")
             pause_btn.icon  = ft.icons.PLAY_ARROW
-            pause_btn.style = ft.ButtonStyle(bgcolor=t.GOOD, color=t.CARD)
+            pause_btn.style = ft.ButtonStyle(bgcolor=t.GOOD, color=t.ON_COLOR)
             if hasattr(page, "ws_client") and page.ws_client and page.ws_client.connected:
                 page.ws_client.pause_session()
         else:
@@ -517,9 +519,9 @@ def en_vivo_view(page: ft.Page) -> ft.Control:
             if page.session_paused_at is not None:
                 page.session_paused_total += (datetime.now() - page.session_paused_at).total_seconds()
                 page.session_paused_at = None
-            pause_btn.text  = "Pausar"
+            pause_btn.text  = tr("Pausar")
             pause_btn.icon  = ft.icons.PAUSE
-            pause_btn.style = ft.ButtonStyle(bgcolor=t.NEUTRAL, color=t.CARD)
+            pause_btn.style = ft.ButtonStyle(bgcolor=t.NEUTRAL, color=t.ON_COLOR)
             if hasattr(page, "ws_client") and page.ws_client and page.ws_client.connected:
                 page.ws_client.resume_session()
         page.update()
@@ -534,7 +536,7 @@ def en_vivo_view(page: ft.Page) -> ft.Control:
     #     stop_btn.visible  = False
     #     pause_btn.text    = "Pausar"
     #     pause_btn.icon    = ft.icons.PAUSE
-    #     pause_btn.style   = ft.ButtonStyle(bgcolor=t.NEUTRAL, color=t.CARD)
+    #     pause_btn.style   = ft.ButtonStyle(bgcolor=t.NEUTRAL, color=t.ON_COLOR)
     #     if hasattr(page, "ws_client") and page.ws_client and page.ws_client.connected:
     #         # El ESP responde con session_end que dispara _on_session_end
     #         page.ws_client.stop_session()
@@ -549,11 +551,11 @@ def en_vivo_view(page: ft.Page) -> ft.Control:
     #                 min_mala=0.0,
     #             )
     #             page.snack_bar = ft.SnackBar(
-    #                 ft.Text("Sesión guardada (sin datos del dispositivo)", color=t.CARD),
+    #                 ft.Text("Sesión guardada (sin datos del dispositivo)", color=t.ON_COLOR),
     #                 bgcolor=t.NEUTRAL)
     #         except Exception as e:
     #             page.snack_bar = ft.SnackBar(
-    #                 ft.Text(f"Error: {e}", color=t.CARD), bgcolor=t.BAD)
+    #                 ft.Text(f"Error: {e}", color=t.ON_COLOR), bgcolor=t.BAD)
     #         page.snack_bar.open = True
     #     status_text.value = "Sin sesión activa"
     #     status_text.color = t.TEXT_MUTED
@@ -570,9 +572,9 @@ def en_vivo_view(page: ft.Page) -> ft.Control:
         start_btn.visible = True
         pause_btn.visible = False
         stop_btn.visible  = False
-        pause_btn.text    = "Pausar"
+        pause_btn.text    = tr("Pausar")
         pause_btn.icon    = ft.icons.PAUSE
-        pause_btn.style   = ft.ButtonStyle(bgcolor=t.NEUTRAL, color=t.CARD)
+        pause_btn.style   = ft.ButtonStyle(bgcolor=t.NEUTRAL, color=t.ON_COLOR)
         if hasattr(page, "ws_client") and page.ws_client and page.ws_client.connected:
             # El ESP responde con session_end que dispara _on_session_end
             page.ws_client.stop_session()
@@ -593,7 +595,7 @@ def en_vivo_view(page: ft.Page) -> ft.Control:
         page.session_start        = None
         page.session_paused_total = 0.0
         page.session_paused_at    = None
-        status_text.value = "Sin sesión activa"
+        status_text.value = tr("Sin sesión activa")
         status_text.color = t.TEXT_MUTED
         timer_text.value  = "00:00"
         # Los ángulos y los aros de mala postura son datos de la sesión que
@@ -614,17 +616,17 @@ def en_vivo_view(page: ft.Page) -> ft.Control:
         pause_btn.visible = True
         stop_btn.visible  = True
         if page.session_paused:
-            status_text.value = "Sesión pausada"
+            status_text.value = tr("Sesión pausada")
             status_text.color = t.NEUTRAL
-            pause_btn.text  = "Reanudar"
+            pause_btn.text  = tr("Reanudar")
             pause_btn.icon  = ft.icons.PLAY_ARROW
-            pause_btn.style = ft.ButtonStyle(bgcolor=t.GOOD, color=t.CARD)
+            pause_btn.style = ft.ButtonStyle(bgcolor=t.GOOD, color=t.ON_COLOR)
         else:
-            status_text.value = "Sesión en curso"
+            status_text.value = tr("Sesión en curso")
             status_text.color = t.GOOD
-            pause_btn.text  = "Pausar"
+            pause_btn.text  = tr("Pausar")
             pause_btn.icon  = ft.icons.PAUSE
-            pause_btn.style = ft.ButtonStyle(bgcolor=t.NEUTRAL, color=t.CARD)
+            pause_btn.style = ft.ButtonStyle(bgcolor=t.NEUTRAL, color=t.ON_COLOR)
         timer_text.value = _fmt_time(_elapsed_now())
         # Reanudar el hilo del timer (solo si no está pausada)
         timer_running[0] = True
@@ -638,10 +640,10 @@ def en_vivo_view(page: ft.Page) -> ft.Control:
         ws = getattr(page, "ws_client", None)
         if ws:
             if ws.connected:
-                conn_status.value = "Conectado"
+                conn_status.value = tr("Conectado")
                 conn_status.color = t.GOOD
             else:
-                conn_status.value = "Desconectado"
+                conn_status.value = tr("Desconectado")
                 conn_status.color = t.BAD
 
     # home_view sobreescribe esto con referencia al resumen
@@ -653,7 +655,7 @@ def en_vivo_view(page: ft.Page) -> ft.Control:
 
     col = ft.Column(
         [
-            section_header("En vivo", "Estado del dispositivo"),
+            section_header(tr("En vivo"), tr("Estado del dispositivo")),
             ft.Container(height=10),
 
             # ── Diagrama + leyenda ─────────────────────────────────────────
@@ -684,7 +686,7 @@ def en_vivo_view(page: ft.Page) -> ft.Control:
                                 ),
                                 ft.Column(
                                     [
-                                        ft.Text("Estado", size=11, color=t.TEXT_MUTED, weight=ft.FontWeight.W_600),
+                                        ft.Text(tr("Estado"), size=11, color=t.TEXT_MUTED, weight=ft.FontWeight.W_600),
                                         ft.Container(height=6),
                                         _legend_item(t.GOOD,       "Listo"),
                                         _legend_item(t.NEUTRAL,    "Pendiente de calibrar"),
@@ -711,7 +713,7 @@ def en_vivo_view(page: ft.Page) -> ft.Control:
                             [
                                 ft.Column(
                                     [
-                                        card_label("Sesión actual"),
+                                        card_label(tr("Sesión actual")),
                                         ft.Container(height=4),
                                         timer_text,
                                         status_text,

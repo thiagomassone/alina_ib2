@@ -10,23 +10,22 @@ from sqlalchemy.orm import Session as DBSession
 from ..config import settings
 from ..database import get_db
 from ..models import Session as SessionModel, User, crear_notificacion
+from ..notif_texts import notif_text, user_lang
 from ..schemas import RachaOut, ScoreSummary, SessionCreate, SessionOut
 from ..security import get_current_user
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 
-# Factor de penalización: cada alerta por minuto resta esta cantidad al score.
-# Ajustar empíricamente una vez que el dispositivo esté calibrado.
-_PENALTY_FACTOR = 10.0
-
-
-def _calc_score(alertas: int, duracion_min: float) -> float:
-    """Calcula el score de una sesión (0–100)."""
+# Score por exposición: porcentaje del tiempo de la sesión en NO-mala postura.
+# Se validó contra 9 sesiones reales: el score anterior (por tasa de alertas)
+# estaba anti-correlacionado con la mala postura real (r=-0.53) y saturaba en 100
+# para las peores sesiones. Ver informe (calibración del score).
+def _calc_score(min_mala: float, duracion_min: float) -> float:
+    """Score de la sesión (0–100) = % del tiempo en buena postura."""
     if duracion_min <= 0:
         return 100.0
-    rate = alertas / duracion_min          # alertas por minuto
-    return max(0.0, round(100.0 - rate * _PENALTY_FACTOR, 1))
-
+    frac_mala = min(1.0, max(0.0, min_mala / duracion_min))
+    return round(100.0 * (1.0 - frac_mala), 1)
 
 
 # Umbral de score bajo para generar notificación
@@ -39,7 +38,7 @@ def create_session(
     db: DBSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    score = _calc_score(payload.alertas_hapticas, payload.duracion_min)
+    score = _calc_score(payload.min_mala, payload.duracion_min)
     session = SessionModel(
         user_id=current_user.id,
         started_at=payload.started_at,
@@ -56,7 +55,7 @@ def create_session(
     # ── Notificaciones por evento de esta sesión ─────────────────────────────
     mins = int(payload.duracion_min)
     dur_str = f"{mins // 60}h {mins % 60:02d}m" if mins >= 60 else f"{mins} min"
-    cuando = payload.started_at.strftime('%d/%m a las %H:%M')
+    lang = user_lang(db, current_user.id)
 
     # ¿Nuevo récord de score? (contra el mejor de las sesiones anteriores)
     mejor_previo = (
@@ -72,33 +71,20 @@ def create_session(
     record_racha_previo = _racha_record(dias - {date.today()})
     record_racha = record_racha_nuevo > record_racha_previo and record_racha_previo > 0
 
+    def _notif(key: str, tipo: str | None = None, **kw):
+        ti, ms = notif_text(key, lang, **kw)
+        crear_notificacion(db=db, user_id=current_user.id, tipo=tipo or key, titulo=ti, mensaje=ms)
+
     if score < _SCORE_BAJO:
-        crear_notificacion(
-            db=db, user_id=current_user.id, tipo="session_score_low",
-            titulo="Sesión con postura baja",
-            mensaje=f"Tu sesión del {cuando} ({dur_str}) tuvo un score de {int(score)}/100. "
-                    f"Intentá mantener la espalda más erguida.",
-        )
+        _notif("session_score_low", dt=payload.started_at, dur=dur_str, score=int(score))
     elif score >= 85 and not record_score:
-        crear_notificacion(
-            db=db, user_id=current_user.id, tipo="buena_sesion",
-            titulo="¡Gran sesión!",
-            mensaje=f"Tu sesión del {cuando} ({dur_str}) cerró con {int(score)}/100. ¡Seguí así!",
-        )
+        _notif("buena_sesion", dt=payload.started_at, dur=dur_str, score=int(score))
 
     if record_score:
-        crear_notificacion(
-            db=db, user_id=current_user.id, tipo="nuevo_record",
-            titulo="¡Nuevo récord de score!",
-            mensaje=f"Superaste tu mejor marca con {int(score)}/100 en tu sesión del {cuando}.",
-        )
+        _notif("record_score", tipo="nuevo_record", dt=payload.started_at, score=int(score))
 
     if record_racha:
-        crear_notificacion(
-            db=db, user_id=current_user.id, tipo="nuevo_record",
-            titulo="¡Nueva racha récord!",
-            mensaje=f"Llegaste a {record_racha_nuevo} días seguidos usando ALINA. ¡Tu mejor racha!",
-        )
+        _notif("record_racha", tipo="nuevo_record", dias=record_racha_nuevo)
 
     return session
 

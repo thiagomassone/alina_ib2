@@ -3,6 +3,7 @@
 from __future__ import annotations
 import flet as ft
 import theme as t
+from i18n import tr
 
 
 # ── Notificaciones ────────────────────────────────────────────────────────────
@@ -59,12 +60,12 @@ def alina_logo_mark(size: int = 32) -> ft.Control:
     y = start_y
     for r in radii:
         y += r
-        circles_svg += f'<circle cx="{circle_cx:.1f}" cy="{y:.1f}" r="{r:.1f}" fill="#03A097"/>'
+        circles_svg += f'<circle cx="{circle_cx:.1f}" cy="{y:.1f}" r="{r:.1f}" fill="{t.TEAL}"/>'
         y += r + s * 0.04
 
     svg = f"""<svg viewBox="0 0 {s} {s}" xmlns="http://www.w3.org/2000/svg">
   <polyline points="{left_x:.1f},{left_y:.1f} {tip_x:.1f},{tip_y:.1f} {right_x:.1f},{right_y:.1f}"
-    fill="none" stroke="#1A2E4D" stroke-width="{stroke:.1f}" stroke-linejoin="round" stroke-linecap="round"/>
+    fill="none" stroke="{t.NAVY}" stroke-width="{stroke:.1f}" stroke-linejoin="round" stroke-linecap="round"/>
   {circles_svg}
 </svg>"""
     b64 = base64.b64encode(svg.encode()).decode()
@@ -154,7 +155,7 @@ def placeholder_view(label: str, icon) -> ft.Control:
                 ft.Icon(icon, color=t.TEAL_SOFT, size=72),
                 ft.Container(height=8),
                 ft.Text(label, size=18, weight=ft.FontWeight.W_600, color=t.TEXT_DARK),
-                ft.Text("Próximamente", size=13, color=t.TEXT_MUTED),
+                ft.Text(tr("Próximamente"), size=13, color=t.TEXT_MUTED),
             ],
             horizontal_alignment=ft.CrossAxisAlignment.CENTER,
             alignment=ft.MainAxisAlignment.CENTER,

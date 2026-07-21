@@ -8,7 +8,7 @@
 
 Uso:
     badge = RachaBadge(page, value=6)
-    section_header("Hola, Thiago", "Resumen de hoy", badge=badge.control)
+    section_header("Hola, Thiago", tr("Resumen de hoy"), badge=badge.control)
     ...
     badge.set(6)            # setear sin celebrar (carga inicial)
     badge.animate_to(7)     # setear + celebrar (cuando sube la racha)
@@ -23,6 +23,7 @@ import time
 
 import flet as ft
 import theme as t
+from i18n import tr
 
 
 # ── Config ────────────────────────────────────────────────────────────────────
@@ -57,7 +58,7 @@ class RachaBadge:
             border_radius=999,
             scale=1.0,
             animate_scale=ft.Animation(430, ft.AnimationCurve.BOUNCE_OUT),
-            tooltip="Racha de uso: días seguidos con al menos una sesión",
+            tooltip=tr("Racha de uso: días seguidos con al menos una sesión"),
         )
         self.control = self._pill
         self._apply(active=self.value > 0)
